@@ -1,6 +1,6 @@
 # INSIEME — Assistente personale e familiare
 
-Documento funzionale e tecnico · versione 1.0 · 11 settembre 2026
+Documento funzionale e tecnico · versione 1.1 · 11 settembre 2026 · unico documento di progetto (sostituisce docs/PROGETTO.md)
 
 ## 1. Stato delle decisioni
 
@@ -17,15 +17,17 @@ Questo documento raccoglie le richieste della famiglia e propone una base tecnic
 | Audio come ingresso principale | Priorità confermata |
 | Foto, PDF, Gmail e moduli manuali | Confermato |
 | WhatsApp | Richiesto; modalità di integrazione da verificare |
-| PostgreSQL e backend Python/FastAPI | Proposta tecnica |
-| Agno, ex Phidata, come framework agente | Raccomandazione, non ancora installato né definitivamente approvato |
-| Hermes Agent | Alternativa valutata, non installata |
+| Backend Python/FastAPI | Confermato e realizzato (v0.2) |
+| Database SQLite tramite SQLAlchemy/Alembic | Confermato e realizzato; PostgreSQL resta possibile in futuro senza riscrivere il codice |
+| Agente: API LLM diretta con tool use dietro un adattatore interno | Confermato; nessun framework agente (Agno e Hermes scartati) |
 
 ## 2. Obiettivo del prodotto
 
 L'utente invia un audio naturale e l'assistente consulta, crea e aggiorna elementi reali dell'organizzazione familiare. L'interfaccia permette di controllare e correggere ciò che viene salvato. La memoria conversazionale non sostituisce il database.
 
 Esempio: «Giovedì alle tre viene il tecnico, resta a casa mia moglie, ricordaglielo la sera prima e aggiungi le pile alla spesa». Il sistema deve risolvere data e persona, creare l'appuntamento, assegnare la presenza, programmare un avviso consentito e aggiungere il prodotto. Se non è chiaro se siano le 03:00 o le 15:00, deve chiarire prima del salvataggio dell'appuntamento.
+
+Appuntamento, attività e nota restano oggetti distinti; addebito previsto e pagamento verificato pure. Orari di sport e impegni si inseriscono dall'app e non vengono mai presunti.
 
 Non deve dichiarare eseguita un'azione fallita o ancora in attesa. Risposte quali «Dov'è mia moglie?» devono specificare che il luogo deriva dal calendario, con fonte e ultimo aggiornamento. Nessuna localizzazione GPS è stata richiesta.
 
@@ -88,25 +90,25 @@ Strumenti minimi dell'agente: search_events, get_availability, create_event, upd
 
 | Livello | Tecnologia / scelta |
 |---|---|
-| Frontend iniziale | HTML, CSS e JavaScript esistenti; nessuna migrazione a framework necessaria per il primo flusso |
+| Frontend | HTML, CSS e moduli ES senza build (`frontend/`); nessun framework |
 | PWA | Manifest, service worker, HTTPS; test installazione e notifiche sui dispositivi finali |
-| API | Python + FastAPI, validazione Pydantic, contratto OpenAPI |
-| Agente | Agno dietro un adattatore sostituibile; Hermes resta alternativa |
+| API | Python + FastAPI, validazione Pydantic, contratto OpenAPI (`backend/`) |
+| Agente | Chiamate dirette all'API del modello con strumenti tipizzati, dietro un adattatore interno sostituibile; nessun framework agente |
 | Modello e voce | Provider cloud da scegliere; chiavi esclusivamente lato server |
-| Database | PostgreSQL, versione supportata fissata in fase di implementazione |
-| Accesso dati | SQLAlchemy e migrazioni Alembic |
+| Database | SQLite (un file, backup semplice) con WAL e chiavi esterne attive; migrazione a PostgreSQL possibile se servirà |
+| Accesso dati | SQLAlchemy 2 e migrazioni Alembic |
 | File | Directory privata sul NAS, metadati nel DB, accesso solo tramite API autorizzata |
-| Lavori asincroni | Worker Python separato, coda persistente PostgreSQL per il carico familiare iniziale |
+| Lavori asincroni | Worker Python separato, tabella `jobs` nel database come coda persistente (sufficiente per il carico familiare) |
 | Distribuzione | Container Compose sul NAS, compatibilità DSM/Container Manager da verificare |
 | Accesso remoto | Reverse proxy HTTPS, dominio e certificato; autenticazione prima dell'esposizione |
 
-Schema logico: PWA → API autenticata → servizi applicativi → PostgreSQL e archivio NAS. API → coda → worker → trascrizione/LLM/Gmail/canali. L'agente richiama i servizi applicativi, senza accesso SQL o shell generico ai dati familiari.
+Schema logico: PWA → API autenticata → servizi applicativi → database SQLite e archivio NAS. API → coda → worker → trascrizione/LLM/Gmail/canali. L'agente richiama i servizi applicativi, senza accesso SQL o shell generico ai dati familiari.
 
 ## 8. Database: modello logico
 
-**Database scelto come proposta: PostgreSQL.** Nessun database server è attualmente installato nel progetto. Il prototipo usa localStorage nel browser.
+**Database: SQLite** (`data/insieme.db`). Supabase è stato scartato: in cloud porterebbe i dati familiari fuori dal NAS, self-hosted richiede troppi servizi per il DS923+. La tabella seguente è il modello completo; in v0.2 sono realizzate households, users, household_users, sessions, members, events, tasks, shopping_items, audit_entries e idempotency_records (vedi `backend/app/models.py`).
 
-Convenzioni: chiavi UUID; importi NUMERIC(12,2) con valuta; timestamp TIMESTAMPTZ; date senza ora DATE; metadati variabili JSONB senza sostituire relazioni e vincoli. Oggetti modificabili con created_at, updated_at, version e autore. Entità familiari con household_id e regole di visibilità.
+Convenzioni: chiavi UUID; importi decimali con valuta; istanti salvati in UTC e restituiti con fuso; date senza ora come DATE; metadati variabili in JSON senza sostituire relazioni e vincoli. Versione gestita dall'ORM (`version_id_col`): ogni modifica concorrente su una versione superata fallisce con 409. Oggetti modificabili con created_at, updated_at, version e autore. Entità familiari con household_id e regole di visibilità.
 
 | Tabella | Campi principali e relazioni |
 |---|---|
@@ -141,7 +143,7 @@ Convenzioni: chiavi UUID; importi NUMERIC(12,2) con valuta; timestamp TIMESTAMPT
 | notification_outbox | id, reminder_id, recipient_id, channel, status, provider_id, attempt_count |
 | audit_entries | id, household_id, actor_id, action, entity_id, timestamp, changed_fields |
 
-Il modello è una specifica, non una migrazione SQL pronta. Indici principali: eventi per famiglia/data, task per responsabile/stato/scadenza, job per stato/run_at, reminder per stato/scheduled_at, messaggi per connessione/external_id. Vincoli temporali impediscono fine precedente all'inizio. Controlli di relazione impediscono riferimenti tra famiglie diverse. Le regole RLS possono aggiungere difesa al controllo API, ma vanno implementate e testate esplicitamente.
+Il modello è una specifica, non una migrazione SQL pronta. Indici principali: eventi per famiglia/data, task per responsabile/stato/scadenza, job per stato/run_at, reminder per stato/scheduled_at, messaggi per connessione/external_id. Vincoli temporali impediscono fine precedente all'inizio. Controlli di relazione impediscono riferimenti tra famiglie diverse (in v0.2 verificati dall'API e coperti da test).
 
 Fuso iniziale proposto Europe/Rome, configurabile e da confermare. Eventi ricorrenti definiti in ora locale con fuso; le occorrenze vanno calcolate correttamente durante i cambi d'ora. Eventi per tutto il giorno usano date, senza conversioni arbitrarie in mezzanotte UTC.
 
@@ -196,23 +198,26 @@ Installazione, microfono, formati audio e push da testare su Windows, Android e 
 
 ## 13. NAS, backup e operatività
 
-Servizi previsti: frontend/reverse proxy, API, worker, PostgreSQL. Volumi separati per database, documenti e backup. Porte DB non esposte a internet. Risorse, immagini compatibili e versione DSM da verificare sul NAS prima del deployment; i 32 GB non costituiscono da soli una verifica di installabilità.
+Servizi previsti: reverse proxy HTTPS, API (che serve anche il frontend) e worker. Volumi separati per database, documenti e backup. Risorse, immagini compatibili e versione DSM da verificare sul NAS prima del deployment; i 32 GB non costituiscono da soli una verifica di installabilità.
 
 Backup proposto: giornaliero DB e allegati con manifest coerente; copia separata dal NAS; cifratura e rotazione. RAID non sostituisce il backup. Obiettivi iniziali da concordare: perdita massima di 24 ore di dati e ripristino entro una giornata. Prova effettiva di ripristino prima dell'uso quotidiano.
 
 Monitorare ultimo sync Gmail/calendario, job falliti, spazio disco, esiti notifiche, latenza ed uso API. Limite mensile cloud configurabile, con soglie di avviso e comportamento esplicito al raggiungimento del limite. Provider, budget e conservazione audio ancora da scegliere.
 
-## 14. Stato reale del codice
+## 14. Stato reale del codice (v0.2)
 
-Realizzato: prototipo HTML/CSS/JavaScript, navigazione, calendario mensile, inserimento appuntamenti, attività e spesa, completamento/eliminazione, configurazione membri incluse etichette provvisorie dei nonni, selezione aree, export JSON, manifest e service worker di base.
+Realizzato:
+- Backend FastAPI (`backend/`): login con cookie di sessione HttpOnly/SameSite=Strict, password argon2, limite ai tentativi, protezione CSRF (header dedicato + controllo Origin), utenti creati solo da CLI.
+- API `/api/v1` per famiglia, familiari, appuntamenti (con filtro per giorni locali corretto ai cambi d'ora), attività, spesa; If-Match obbligatorio su modifica/eliminazione con 409 sui conflitti; Idempotency-Key sulle creazioni; eliminazione soft con ripristino; registro audit; errori strutturati con request_id; importazione dei dati del prototipo.
+- Frontend a moduli (`frontend/js/`): Oggi, Calendario con giorni selezionabili, Attività raggruppate per scadenza, Spesa con inserimento rapido, Famiglia (chi fa cosa / senza responsabile), Impostazioni (familiari, aree, export/import, uscita). Modifica di ogni voce, «Annulla» dopo l'eliminazione, sincronizzazione periodica, stato offline visibile, data di oggi sempre aggiornata.
+- Service worker: solo interfaccia in cache, mai /api.
+- Test: 23 test API (`uv run pytest`) più prova end-to-end dell'interfaccia in browser headless (accesso, inserimento, modifica, annulla, sincronizzazione tra due utenti, vista telefono).
 
-File: index.html, styles.css, app.js, sw.js, manifest.webmanifest, icon.svg, server.cjs, package.json. Avvio npm start su http://localhost:4173, bind locale 127.0.0.1. Dati nel localStorage insieme-v1, isolati per browser/origine. Lo script npm run check esegue controlli di sintassi; non certifica i flussi, il rendering o l'installazione sui dispositivi.
-
-Non realizzati: database server, utenti autenticati, sincronizzazione, audio, LLM/Agno/Hermes, upload documenti, Gmail, WhatsApp, calendario esterno, ricorrenze, notifiche reali e deployment NAS. Il prototipo non è pronto per dati riservati o esposizione pubblica.
+Non realizzati: audio, LLM, ricorrenze, promemoria/notifiche, documenti, auto/bollette, Gmail, WhatsApp, calendario esterno, ruolo «dispositivo condiviso» per il tablet, visibilità privata, offline in scrittura, deployment NAS con HTTPS. Non esporre su internet prima di HTTPS e reverse proxy.
 
 ## 15. Piano aggiornato: audio al centro
 
-1. Backend minimo, PostgreSQL, autenticazione e migrazioni; API per eventi, attività e spesa.
+1. Backend minimo, database, autenticazione e migrazioni; API per eventi, attività e spesa. **Fatto in v0.2.**
 2. Primo percorso completo audio → trascrizione → agente → azioni salvate → riepilogo, con chiarimenti e retry verificati.
 3. Collegamento PWA ai dati condivisi; disponibilità, nonni, accompagnamenti e ricorrenze.
 4. Documenti e auto/bollette con estrazione e revisione.
@@ -238,11 +243,11 @@ Questa sequenza aggiorna la specifica iniziale: l'audio non è una rifinitura da
 
 ## 17. Informazioni ancora necessarie
 
-Non impediscono il prototipo, ma servono prima della produzione: nomi e ruoli reali; orari; accessi concessi ai nonni; provider cloud e budget; conferma Agno oppure Hermes; formato calendario lavorativo; caselle Gmail e criteri; modalità WhatsApp; DSM e rete NAS; dominio/accesso remoto; backup; conservazione documenti/audio e orari delle notifiche. La maggior parte dovrà essere raccolta nella configurazione dell'app.
+Non impediscono il prototipo, ma servono prima della produzione: nomi e ruoli reali; orari; accessi concessi ai nonni; provider cloud e budget; formato calendario lavorativo; caselle Gmail e criteri; modalità WhatsApp; DSM e rete NAS; dominio/accesso remoto; backup; conservazione documenti/audio e orari delle notifiche. La maggior parte dovrà essere raccolta nella configurazione dell'app.
 
 ## 18. Riferimenti
 
-Documentazione consultata nella conversazione per il confronto degli agenti:
+Framework agente valutati e poi scartati a favore dell'API diretta del modello (restano come riferimento):
 
 - Agno: https://docs.agno.com/ — SDK, runtime, API e integrazioni.
 - Phidata: https://docs.phidata.com/introduction — passaggio del progetto ad Agno.

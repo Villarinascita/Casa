@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#254f43">
+  <title>Insieme · La nostra famiglia</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="js/main.js"></script>
+</head>
+<body>
+  <a class="skip" href="#screen">Vai al contenuto</a>
+  <aside>
+    <a class="brand" href="#oggi">insieme<span>LA NOSTRA FAMIGLIA</span></a>
+    <nav aria-label="Navigazione principale" id="nav"></nav>
+    <div class="aside-note">Un posto per tutto.<br>Più spazio per voi.</div>
+  </aside>
+  <main>
+    <header>
+      <div>
+        <span id="date"></span>
+        <span id="sync" class="sync"></span>
+      </div>
+      <button id="add" class="primary" type="button">＋ Aggiungi</button>
+    </header>
+    <div id="legacy-banner" class="banner" hidden>
+      <span>Su questo dispositivo ci sono dati della prima versione, non ancora condivisi.</span>
+      <button type="button" id="legacy-import" class="primary">Importali</button>
+      <button type="button" id="legacy-dismiss">Ignora</button>
+    </div>
+    <section id="screen" tabindex="-1"></section>
+    <p id="status" class="visually-hidden" role="status" aria-live="polite"></p>
+  </main>
+
+  <dialog id="editor" aria-labelledby="editor-title">
+    <form id="entry" novalidate>
+      <div class="section-head">
+        <h2 id="editor-title">Nuovo appuntamento</h2>
+        <button type="button" data-close aria-label="Chiudi senza salvare">Chiudi</button>
+      </div>
+      <fieldset class="segmented">
+        <legend>Tipo</legend>
+        <label><input type="radio" name="type" value="event" checked><span>Appuntamento</span></label>
+        <label><input type="radio" name="type" value="task"><span>Attività</span></label>
+        <label><input type="radio" name="type" value="shopping"><span>Spesa</span></label>
+      </fieldset>
+      <label><span id="title-label">Cosa?</span><input name="title" required maxlength="180"></label>
+      <div class="fields" data-for="event">
+        <label><span>Data</span><input name="date" type="date"></label>
+        <label class="setting-check inline"><input type="checkbox" name="all_day">Tutto il giorno</label>
+        <label data-timed><span>Inizio</span><input name="start" type="time"></label>
+        <label data-timed><span>Fine (facoltativa)</span><input name="end" type="time"></label>
+      </div>
+      <div data-for="task">
+        <label><span>Scadenza (facoltativa)</span><input name="due_date" type="date"></label>
+      </div>
+      <div data-for="shopping">
+        <label><span>Quantità</span><input name="quantity" maxlength="40" placeholder="Es. 2 confezioni"></label>
+      </div>
+      <div class="fields" data-for="event task">
+        <label><span>Chi se ne occupa</span><select name="member_id"></select></label>
+        <label data-for="event"><span>Luogo</span><input name="location" maxlength="300" placeholder="Es. piscina comunale"></label>
+      </div>
+      <div data-for="event task">
+        <label><span>Note</span><textarea name="notes" rows="3" maxlength="2000"></textarea></label>
+      </div>
+      <p class="hint" data-for="event">Ricorrenze e promemoria automatici arriveranno nelle prossime versioni.</p>
+      <p id="form-error" class="form-error" role="alert"></p>
+      <div class="dialog-actions">
+        <button type="submit" class="primary">Salva</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>
