@@ -1,7 +1,10 @@
+# Progetto personale: nomi distinti dai container di lavoro (hermes, N8N-LAVORO, ...).
+name: insieme-personale
 services:
   api:
     build: .
-    image: insieme:local
+    image: insieme-personale:local
+    container_name: INSIEME-PERSONALE-API
     restart: unless-stopped
     env_file: .env
     volumes:
@@ -16,7 +19,8 @@ services:
       retries: 3
       start_period: 40s
   worker:
-    image: insieme:local
+    image: insieme-personale:local
+    container_name: INSIEME-PERSONALE-WORKER
     restart: unless-stopped
     profiles: [integrations]
     env_file: .env
@@ -26,3 +30,6 @@ services:
     depends_on:
       api:
         condition: service_healthy
+networks:
+  default:
+    name: NET.PERSONALE

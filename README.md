@@ -14,7 +14,7 @@ Specifica completa, decisioni e piano: [docs/SPECIFICA_COMPLETA.md](docs/SPECIFI
 - Aggiornamento automatico ogni 30 secondi e al ritorno sull'app; «Oggi» si aggiorna da solo a mezzanotte.
 - Esportazione JSON e importazione dei dati della prima versione (localStorage `insieme-v1`).
 
-Questa versione aggiunge il collegamento Telegram per ogni utente, messaggi scritti e vocali (con trascrizione configurata), interpretazione tramite Hermes dedicato, creazione strutturata di appuntamenti/attivitÃ /spesa, promemoria Telegram e ripetizione delle attivitÃ . Gmail in sola lettura produce proposte da approvare; Calendar sincronizza i calendari selezionati e mostra i conflitti da risolvere. Sul NAS Ã¨ attiva solo l'API/PWA; le integrazioni esterne non sono ancora collegate ad account reali.
+Questa versione aggiunge il collegamento Telegram per ogni utente, messaggi scritti e vocali (con trascrizione configurata), interpretazione tramite Hermes dedicato, creazione strutturata di appuntamenti/attività/spesa, promemoria Telegram e ripetizione delle attività. Gmail in sola lettura produce proposte da approvare; Calendar sincronizza i calendari selezionati e mostra i conflitti da risolvere. Sul NAS è attiva solo l'API/PWA; le integrazioni esterne non sono ancora collegate ad account reali.
 
 Restano fuori da questo rilascio: documenti, auto/bollette, WhatsApp, ricorrenze degli appuntamenti e sincronizzazione offline in scrittura.
 

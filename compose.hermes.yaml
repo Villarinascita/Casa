@@ -2,6 +2,7 @@
 services:
   hermes-chat:
     image: nousresearch/hermes-agent:v2026.7.20
+    container_name: HERMES-PERSONALE-CHAT
     command: ["gateway", "run"]
     restart: unless-stopped
     profiles: [integrations]
@@ -10,6 +11,7 @@ services:
       - ./hermes-chat-data:/opt/data
   hermes-email:
     image: nousresearch/hermes-agent:v2026.7.20
+    container_name: HERMES-PERSONALE-EMAIL
     command: ["gateway", "run"]
     restart: unless-stopped
     profiles: [integrations]
