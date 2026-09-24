@@ -1,0 +1,14 @@
+.git
+.venv
+backend/.venv
+backend/.pytest_tmp
+backend/.pytest_cache
+**/__pycache__
+**/*.pyc
+data
+.env
+.env.hermes-chat
+.env.hermes-email
+hermes-chat-data
+hermes-email-data
+graphify-out

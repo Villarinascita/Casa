@@ -70,6 +70,8 @@ export function openEditor({ type = 'event', date, entity = null } = {}) {
     f.elements.title.value = entity.title;
     f.elements.due_date.value = entity.due_date || '';
     f.elements.notes.value = entity.notes || '';
+    f.elements.remind_at.value = entity.remind_at ? `${dayOfInstant(entity.remind_at)}T${timeOf(entity.remind_at)}` : '';
+    f.elements.repeat.value = entity.repeat || '';
   } else if (entity && type === 'shopping') {
     f.elements.title.value = entity.label;
     f.elements.quantity.value = entity.quantity || '';
@@ -94,7 +96,13 @@ function payload() {
   if (type === 'shopping') return { data: { label: title, quantity: f.quantity.value.trim() || null } };
 
   const common = { title, member_id: f.member_id.value || null, notes: f.notes.value.trim() || null };
-  if (type === 'task') return { data: { ...common, due_date: f.due_date.value || null } };
+  if (type === 'task') {
+    if (f.repeat.value && !f.remind_at.value) return { error: 'Indica quando inviare il promemoria ricorrente.' };
+    const [remindDate, remindTime] = f.remind_at.value.split('T');
+    return { data: { ...common, due_date: f.due_date.value || null,
+      remind_at: remindDate ? toInstant(remindDate, remindTime) : null,
+      repeat: f.repeat.value || null } };
+  }
 
   const date = f.date.value;
   if (!date) return { error: 'Indica la data dell’appuntamento.' };

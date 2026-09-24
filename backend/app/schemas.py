@@ -1,5 +1,5 @@
 from datetime import date, datetime, timezone
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, computed_field, field_validator, model_validator
 
@@ -157,15 +157,29 @@ class TaskIn(Schema):
     title: Text(180)
     notes: OptText(2000) = None
     due_date: date | None = None
+    remind_at: datetime | None = None
+    repeat: Literal["daily", "weekly", "monthly"] | None = None
     member_id: str | None = None
 
     _blank = field_validator("notes", "member_id", mode="before")(_blank_to_none)
+
+    @model_validator(mode="after")
+    def _valid_reminder(self):
+        if self.repeat and self.remind_at is None:
+            raise ValueError("Indica quando ricordare l'attività ricorrente.")
+        if self.remind_at is not None:
+            if self.remind_at.tzinfo is None:
+                raise ValueError("L'ora del promemoria deve includere il fuso orario.")
+            self.remind_at = self.remind_at.astimezone(timezone.utc)
+        return self
 
 
 class TaskPatch(Schema):
     title: Text(180) | None = None
     notes: OptText(2000) = None
     due_date: date | None = None
+    remind_at: datetime | None = None
+    repeat: Literal["daily", "weekly", "monthly"] | None = None
     member_id: str | None = None
     status: Literal["open", "done"] | None = None
 
@@ -174,6 +188,8 @@ class TaskOut(EntityOut):
     title: str
     notes: str | None
     due_date: date | None
+    remind_at: datetime | None
+    repeat: str | None
     member_id: str | None
     status: str
     completed_at: datetime | None
@@ -234,3 +250,21 @@ class LegacyImportOut(BaseModel):
     tasks: int
     shopping: int
     skipped: list[str]
+
+
+class AssistantAction(Schema):
+    kind: Literal["event", "task", "shopping"]
+    data: dict[str, Any]
+
+
+class ActionBatchIn(Schema):
+    actions: list[AssistantAction] = Field(min_length=1, max_length=20)
+
+
+class CreatedAction(OutSchema):
+    kind: str
+    id: str
+
+
+class ActionBatchOut(OutSchema):
+    created: list[CreatedAction]

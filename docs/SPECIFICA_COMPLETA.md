@@ -1,6 +1,8 @@
 # INSIEME — Assistente personale e familiare
 
-Documento funzionale e tecnico · versione 1.1 · 11 settembre 2026 · unico documento di progetto (sostituisce docs/PROGETTO.md)
+Documento funzionale e tecnico · versione 1.2 · 24 settembre 2026 · unico documento di progetto (sostituisce docs/PROGETTO.md)
+
+**Aggiornamento v0.3:** l'utente ha scelto Hermes Agent, già usato in un altro progetto. Questa decisione sostituisce i riferimenti precedenti che lo scartavano. Il backend resta proprietario di identità, validazione e scrittura; Hermes interpreta testo e email mediante profili dedicati. Il codice locale realizza Telegram, promemoria, Gmail in lettura e sincronizzazione Calendar. L'attivazione su account reali e NAS è ancora da verificare.
 
 ## 1. Stato delle decisioni
 
@@ -19,7 +21,7 @@ Questo documento raccoglie le richieste della famiglia e propone una base tecnic
 | WhatsApp | Richiesto; modalità di integrazione da verificare |
 | Backend Python/FastAPI | Confermato e realizzato (v0.2) |
 | Database SQLite tramite SQLAlchemy/Alembic | Confermato e realizzato; PostgreSQL resta possibile in futuro senza riscrivere il codice |
-| Agente: API LLM diretta con tool use dietro un adattatore interno | Confermato; nessun framework agente (Agno e Hermes scartati) |
+| Agente: Hermes Agent con profili dedicati, chiamato tramite API dal backend | Confermato nella richiesta successiva; implementato nel codice locale v0.3 |
 
 ## 2. Obiettivo del prodotto
 
@@ -93,7 +95,7 @@ Strumenti minimi dell'agente: search_events, get_availability, create_event, upd
 | Frontend | HTML, CSS e moduli ES senza build (`frontend/`); nessun framework |
 | PWA | Manifest, service worker, HTTPS; test installazione e notifiche sui dispositivi finali |
 | API | Python + FastAPI, validazione Pydantic, contratto OpenAPI (`backend/`) |
-| Agente | Chiamate dirette all'API del modello con strumenti tipizzati, dietro un adattatore interno sostituibile; nessun framework agente |
+| Agente | Hermes Agent con profili isolati per messaggi e email; backend con validazione tipizzata e identità verificata |
 | Modello e voce | Provider cloud da scegliere; chiavi esclusivamente lato server |
 | Database | SQLite (un file, backup semplice) con WAL e chiavi esterne attive; migrazione a PostgreSQL possibile se servirà |
 | Accesso dati | SQLAlchemy 2 e migrazioni Alembic |
@@ -247,7 +249,7 @@ Non impediscono il prototipo, ma servono prima della produzione: nomi e ruoli re
 
 ## 18. Riferimenti
 
-Framework agente valutati e poi scartati a favore dell'API diretta del modello (restano come riferimento):
+Riferimenti all'epoca della prima valutazione; la scelta successiva dell'utente è Hermes Agent:
 
 - Agno: https://docs.agno.com/ — SDK, runtime, API e integrazioni.
 - Phidata: https://docs.phidata.com/introduction — passaggio del progetto ad Agno.

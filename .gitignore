@@ -8,4 +8,10 @@ data/
 *.db-wal
 *.db-shm
 .env
+.env.hermes-chat
+.env.hermes-email
+hermes-chat-data/
+hermes-email-data/
+credenziali-locali.txt
+.local/
 graphify-out/

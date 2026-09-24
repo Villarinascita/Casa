@@ -55,6 +55,11 @@
       </div>
       <div data-for="task">
         <label><span>Scadenza (facoltativa)</span><input name="due_date" type="date"></label>
+        <label><span>Promemoria (facoltativo)</span><input name="remind_at" type="datetime-local"></label>
+        <label><span>Ripeti</span><select name="repeat">
+          <option value="">Non ripetere</option><option value="daily">Ogni giorno</option>
+          <option value="weekly">Ogni settimana</option><option value="monthly">Ogni mese</option>
+        </select></label>
       </div>
       <div data-for="shopping">
         <label><span>Quantità</span><input name="quantity" maxlength="40" placeholder="Es. 2 confezioni"></label>

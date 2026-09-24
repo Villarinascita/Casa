@@ -1,6 +1,6 @@
 [project]
 name = "insieme-backend"
-version = "0.2.0"
+version = "0.3.0"
 description = "API di Insieme, assistente di famiglia"
 requires-python = ">=3.11"
 dependencies = [
@@ -11,6 +11,8 @@ dependencies = [
     "pydantic-settings>=2.4",
     "argon2-cffi>=23.1",
     "tzdata>=2024.1",
+    "httpx>=0.27",
+    "cryptography>=43",
 ]
 
 [dependency-groups]

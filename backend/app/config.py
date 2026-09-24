@@ -18,6 +18,20 @@ class Settings(BaseSettings):
     cookie_secure: bool = False
     # Origini aggiuntive ammesse per le richieste che modificano dati (es. dominio del reverse proxy).
     allowed_origins: list[str] = []
+    telegram_bot_token: str = ""
+    hermes_url: str = ""
+    hermes_api_key: str = ""
+    hermes_model: str = "insieme"
+    hermes_email_url: str = ""
+    hermes_email_api_key: str = ""
+    hermes_email_model: str = "insieme-email"
+    stt_url: str = ""
+    stt_api_key: str = ""
+    stt_model: str = "whisper-large-v3-turbo"
+    public_url: str = ""
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_token_key: str = ""
 
 
 settings = Settings()

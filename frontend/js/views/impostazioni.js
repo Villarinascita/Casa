@@ -1,4 +1,5 @@
 import { $, $$, html, toast } from '../dom.js';
+import { api } from '../api.js';
 import { today } from '../dates.js';
 import { create, find, importLegacy, logout, state, update, updateHousehold } from '../store.js';
 import { heading, sectionHead } from './common.js';
@@ -58,9 +59,30 @@ export function render() {
     </section>
 
     <section class="module">
-      ${sectionHead('Collegamenti previsti')}
-      <p>Assistente vocale · Gmail · Calendario lavorativo · WhatsApp</p>
-      <span class="chip">Non ancora collegati</span>
+      ${sectionHead('Telegram')}
+      <p>Collega il tuo account per aggiungere attività, appuntamenti e spesa con messaggi scritti o vocali.</p>
+      <p id="telegram-status">Verifica collegamento…</p>
+      <div class="button-row">
+        <button type="button" id="telegram-code">Crea codice di collegamento</button>
+        <button type="button" id="telegram-disconnect" hidden>Scollega</button>
+      </div>
+      <p id="telegram-instructions" role="status"></p>
+    </section>
+
+    <section class="module">
+      ${sectionHead('Google e Gmail')}
+      <p>Collega il tuo account per importare gli appuntamenti dai calendari scelti. Le email che corrispondono al filtro diventano proposte da confermare.</p>
+      <div id="google-settings" aria-live="polite">Caricamento collegamento Google…</div>
+    </section>
+
+    <section class="module">
+      ${sectionHead('Proposte dalle email')}
+      <div id="email-proposals" aria-live="polite">Caricamento proposte…</div>
+    </section>
+
+    <section class="module">
+      ${sectionHead('Conflitti di calendario')}
+      <div id="calendar-conflicts" aria-live="polite">Caricamento conflitti…</div>
     </section>
 
     <section class="module">
@@ -81,6 +103,27 @@ async function runImport(data) {
 }
 
 export function mount(root) {
+  loadGoogle(root).catch((err) => { $('#google-settings', root).textContent = err.message; });
+  loadProposals(root).catch((err) => { $('#email-proposals', root).textContent = err.message; });
+  loadConflicts(root).catch((err) => { $('#calendar-conflicts', root).textContent = err.message; });
+  api('GET', '/connections/telegram').then(({ connected }) => {
+    $('#telegram-status', root).textContent = connected ? 'Account collegato.' : 'Account non ancora collegato.';
+    $('#telegram-disconnect', root).hidden = !connected;
+  }).catch((err) => { $('#telegram-status', root).textContent = err.message; });
+  $('#telegram-code', root).addEventListener('click', async () => {
+    try {
+      const { code } = await api('POST', '/connections/telegram/start');
+      $('#telegram-instructions', root).textContent = `Invia /link ${code} in chat privata al bot Telegram. Il codice scade tra 10 minuti.`;
+    } catch (err) { toast(err.message); }
+  });
+  $('#telegram-disconnect', root).addEventListener('click', async () => {
+    try {
+      await api('DELETE', '/connections/telegram');
+      $('#telegram-status', root).textContent = 'Account scollegato.';
+      $('#telegram-disconnect', root).hidden = true;
+      toast('Telegram scollegato.');
+    } catch (err) { toast(err.message); }
+  });
   $$('form[data-member]', root).forEach((form) => {
     const member = () => find('member', form.dataset.member);
     form.addEventListener('submit', async (e) => {
@@ -155,4 +198,113 @@ export function mount(root) {
   });
 
   $('#logout', root).addEventListener('click', logout);
+}
+
+async function loadGoogle(root) {
+  const box = $('#google-settings', root);
+  if (!box) return;
+  const connection = await api('GET', '/connections/google');
+  if (!connection.connected) {
+    box.innerHTML = String(html`<p>Nessun account collegato.</p><button type="button" id="google-connect" class="primary">Collega Google</button>`);
+    $('#google-connect', box).addEventListener('click', async () => {
+      try {
+        const { authorization_url: url } = await api('POST', '/connections/google/start');
+        location.assign(url);
+      } catch (err) { toast(err.message); }
+    });
+    return;
+  }
+  const available = await api('GET', '/connections/google/calendars/available');
+  const selected = new Map(connection.calendars.map((calendar) => [calendar.id, calendar]));
+  box.innerHTML = String(html`
+    <p>Account collegato: <strong>${connection.email}</strong>.</p>
+    ${connection.last_error ? html`<p role="alert">Ultima sincronizzazione: ${connection.last_error}</p>` : ''}
+    <form id="gmail-filter"><label><span>Filtro Gmail</span><input name="query" value="${connection.gmail_query}" maxlength="500" required></label>
+      <p>Usa la sintassi di ricerca Gmail, per esempio <code>label:Famiglia</code>.</p>
+      <button type="submit">Salva filtro</button></form>
+    <form id="google-calendars"><p>Scegli quali calendari leggere. “Solo occupato” nasconde titolo e note.</p>
+      ${available.map((calendar) => html`<div class="member-row" data-calendar-id="${calendar.id}">
+        <strong>${calendar.title}</strong>
+        <label><span>Sincronizzazione</span><select name="mode">
+          <option value="off" ${!selected.has(calendar.id) ? 'selected' : ''}>Escluso</option>
+          <option value="full" ${selected.get(calendar.id)?.mode === 'full' ? 'selected' : ''}>Completa</option>
+          <option value="busy" ${selected.get(calendar.id)?.mode === 'busy' ? 'selected' : ''}>Solo occupato</option>
+        </select></label>
+        <label><input type="radio" name="outbound" value="${calendar.id}" ${selected.get(calendar.id)?.outbound_default ? 'checked' : ''}
+          ${['owner', 'writer'].includes(calendar.access_role) ? '' : 'disabled'}> Calendario per nuovi appuntamenti</label>
+      </div>`)}
+      <button type="submit">Salva calendari</button></form>
+    <button type="button" id="google-disconnect">Scollega Google</button>`);
+  $('#gmail-filter', box).addEventListener('submit', async (event) => {
+    event.preventDefault();
+    try {
+      await api('PUT', '/connections/google/gmail', { body: { query: event.target.elements.query.value.trim() } });
+      toast('Filtro Gmail salvato.');
+    } catch (err) { toast(err.message); }
+  });
+  $('#google-calendars', box).addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const defaultId = $('[name=outbound]:checked', event.target)?.value;
+    const selections = $$('[data-calendar-id]', event.target).map((row) => ({
+      id: row.dataset.calendarId,
+      title: available.find((calendar) => calendar.id === row.dataset.calendarId)?.title || row.dataset.calendarId,
+      mode: $('[name=mode]', row).value,
+      outbound_default: row.dataset.calendarId === defaultId,
+    })).filter((item) => item.mode !== 'off');
+    try {
+      await api('PUT', '/connections/google/calendars', { body: selections });
+      toast('Calendari salvati.');
+      await loadGoogle(root);
+    } catch (err) { toast(err.message); }
+  });
+  $('#google-disconnect', box).addEventListener('click', async () => {
+    try {
+      await api('DELETE', '/connections/google');
+      toast('Google scollegato.');
+      await loadGoogle(root);
+    } catch (err) { toast(err.message); }
+  });
+}
+
+async function loadProposals(root) {
+  const box = $('#email-proposals', root);
+  if (!box) return;
+  const proposals = (await api('GET', '/proposals')).filter((item) => item.status === 'pending');
+  box.innerHTML = proposals.length ? String(html`${proposals.map((item) => html`
+    <article class="member-row" data-proposal="${item.id}">
+      <div><strong>${item.subject || 'Email senza oggetto'}</strong><p>${item.sender || ''}</p>
+        <p>${item.kind}: ${item.data.title || item.data.label || ''}</p><small>${item.snippet || ''}</small></div>
+      <div class="row-actions"><button type="button" data-decision="accept">Aggiungi</button>
+        <button type="button" data-decision="reject">Ignora</button></div>
+    </article>`)}`) : '<p>Nessuna proposta da verificare.</p>';
+  $$('[data-decision]', box).forEach((button) => button.addEventListener('click', async () => {
+    const row = button.closest('[data-proposal]');
+    const item = proposals.find((proposal) => proposal.id === row.dataset.proposal);
+    try {
+      await api('POST', `/proposals/${item.id}/review`, { body: { decision: button.dataset.decision }, version: item.version });
+      toast(button.dataset.decision === 'accept' ? 'Proposta aggiunta.' : 'Proposta ignorata.');
+      await loadProposals(root);
+    } catch (err) { toast(err.message); }
+  }));
+}
+
+async function loadConflicts(root) {
+  const box = $('#calendar-conflicts', root);
+  if (!box) return;
+  const conflicts = await api('GET', '/calendar/conflicts');
+  box.innerHTML = conflicts.length ? String(html`${conflicts.map((item) => html`
+    <article class="member-row" data-conflict="${item.id}">
+      <div><strong>${item.calendar}</strong><p>Insieme: ${item.local_title}</p>
+        <p>Google: ${item.remote.deleted ? 'Evento eliminato' : item.remote.title}</p></div>
+      <div class="row-actions"><button type="button" data-choice="google">Tieni Google</button>
+        ${!item.remote.deleted ? html`<button type="button" data-choice="local">Tieni Insieme</button>` : ''}</div>
+    </article>`)}`) : '<p>Nessun conflitto da risolvere.</p>';
+  $$('[data-choice]', box).forEach((button) => button.addEventListener('click', async () => {
+    const id = button.closest('[data-conflict]').dataset.conflict;
+    try {
+      await api('POST', `/calendar/conflicts/${id}/resolve`, { body: { choice: button.dataset.choice } });
+      toast('Conflitto risolto.');
+      await loadConflicts(root);
+    } catch (err) { toast(err.message); }
+  }));
 }

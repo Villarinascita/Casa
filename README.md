@@ -3,7 +3,7 @@
 PWA per coordinare impegni, attività e spesa della famiglia, con dati condivisi tra tablet e telefoni.
 Specifica completa, decisioni e piano: [docs/SPECIFICA_COMPLETA.md](docs/SPECIFICA_COMPLETA.md).
 
-## Cosa funziona oggi (v0.2)
+## Cosa funziona oggi (v0.3)
 
 - Accesso con account personali (niente registrazione pubblica: gli utenti si creano da riga di comando).
 - Familiari con identificativo stabile: rinominarli non rompe gli impegni; si archiviano invece di cancellarli.
@@ -14,7 +14,9 @@ Specifica completa, decisioni e piano: [docs/SPECIFICA_COMPLETA.md](docs/SPECIFI
 - Aggiornamento automatico ogni 30 secondi e al ritorno sull'app; «Oggi» si aggiorna da solo a mezzanotte.
 - Esportazione JSON e importazione dei dati della prima versione (localStorage `insieme-v1`).
 
-Non ancora presenti: assistente vocale/LLM, ricorrenze, promemoria, documenti, Gmail, WhatsApp, deploy sul NAS.
+Questa versione aggiunge il collegamento Telegram per ogni utente, messaggi scritti e vocali (con trascrizione configurata), interpretazione tramite Hermes dedicato, creazione strutturata di appuntamenti/attivitÃ /spesa, promemoria Telegram e ripetizione delle attivitÃ . Gmail in sola lettura produce proposte da approvare; Calendar sincronizza i calendari selezionati e mostra i conflitti da risolvere. Sul NAS Ã¨ attiva solo l'API/PWA; le integrazioni esterne non sono ancora collegate ad account reali.
+
+Restano fuori da questo rilascio: documenti, auto/bollette, WhatsApp, ricorrenze degli appuntamenti e sincronizzazione offline in scrittura.
 
 ## Struttura
 
@@ -42,6 +44,10 @@ Poi apri http://localhost:4173. Documentazione interattiva delle API: http://loc
 
 Altri comandi: `list-users`, `reset-password <login>`. Configurazione con variabili `INSIEME_*`
 (vedi `backend/app/config.py`), per esempio `INSIEME_DATABASE_URL` o `INSIEME_COOKIE_SECURE=true` dietro HTTPS.
+
+Per le integrazioni avvia anche `uv run python -m app.worker` in un secondo processo. Configura le variabili elencate in [.env.example](.env.example); il worker usa il token Telegram e un endpoint API Hermes dedicato. Per Google crea un client OAuth Web con redirect URI `https://<dominio>/api/v1/connections/google/callback`, abilita Gmail API e Google Calendar API, e genera `INSIEME_GOOGLE_TOKEN_KEY` con `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. Per i messaggi vocali serve un endpoint di trascrizione compatibile con `multipart/form-data` (`file`, `model`, `language`) che restituisca `{ "text": "..." }`.
+
+Sul NAS usa [compose.yaml](compose.yaml) e la guida [docs/DEPLOY_NAS.md](docs/DEPLOY_NAS.md). La chiave di cifratura e le credenziali devono essere conservate anche nel backup separato.
 
 ## Test
 

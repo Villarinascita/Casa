@@ -41,10 +41,12 @@ function dueLabel(task) {
 
 export function taskRow(task) {
   const done = task.status === 'done';
+  const reminder = task.remind_at ? `Avviso ${new Date(task.remind_at).toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' })}` : null;
+  const repeat = { daily: 'ogni giorno', weekly: 'ogni settimana', monthly: 'ogni mese' }[task.repeat];
   return html`<div class="item ${done ? 'done' : ''}">
     <button type="button" class="check" data-action="toggle" data-kind="task" data-id="${task.id}"
       aria-pressed="${done}" aria-label="${done ? 'Riapri' : 'Completa'} ${task.title}">${done ? '✓' : ''}</button>
-    ${openButton('task', task.id, task.title, [dueLabel(task), memberName(task.member_id) || 'Da assegnare', task.notes])}
+    ${openButton('task', task.id, task.title, [dueLabel(task), reminder, repeat, memberName(task.member_id) || 'Da assegnare', task.notes])}
     ${deleteButton('task', task.id, task.title)}
   </div>`;
 }

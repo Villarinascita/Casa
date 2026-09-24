@@ -6,13 +6,13 @@ from fastapi.staticfiles import StaticFiles
 from . import errors
 from .config import settings
 from .errors import ApiError
-from .routers import auth, imports, resources
+from .routers import assistant, auth, calendar, connections, google_connections, imports, proposals, resources
 from .security import csrf_rejection
 
 CSP = ("default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; "
        "manifest-src 'self'; worker-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 
-app = FastAPI(title="Insieme API", version="0.2.0", docs_url="/api/docs", redoc_url=None,
+app = FastAPI(title="Insieme API", version="0.3.0", docs_url="/api/docs", redoc_url=None,
               openapi_url="/api/openapi.json")
 errors.install(app)
 
@@ -40,6 +40,11 @@ api.include_router(auth.router)
 for router in resources.routers:
     api.include_router(router)
 api.include_router(imports.router)
+api.include_router(assistant.router)
+api.include_router(connections.router)
+api.include_router(google_connections.router)
+api.include_router(proposals.router)
+api.include_router(calendar.router)
 
 
 @api.get("/health", tags=["health"])

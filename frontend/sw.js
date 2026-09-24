@@ -1,7 +1,7 @@
 // Service worker: solo l'interfaccia va in cache (rete prima, cache se offline). Mai i dati di /api.
 // Aggiornare VERSION a ogni rilascio che cambia l'elenco dei file.
 
-const VERSION = '2';
+const VERSION = '4';
 const CACHE = `insieme-shell-v${VERSION}`;
 const ASSETS = [
   './', './index.html', './styles.css', './manifest.webmanifest', './icon.svg',

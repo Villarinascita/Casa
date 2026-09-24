@@ -154,6 +154,8 @@ class Task(HouseholdEntity, Base):
     title: Mapped[str] = mapped_column(String(180))
     notes: Mapped[str | None] = mapped_column(Text)
     due_date: Mapped[date | None] = mapped_column(Date)
+    remind_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    repeat: Mapped[str | None] = mapped_column(String(10))
     member_id: Mapped[str | None] = mapped_column(ForeignKey("members.id"))
     status: Mapped[str] = mapped_column(String(10), default="open")
     completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
@@ -161,8 +163,164 @@ class Task(HouseholdEntity, Base):
 
     __table_args__ = (
         CheckConstraint("status IN ('open', 'done')", name="ck_tasks_status"),
+        CheckConstraint("repeat IS NULL OR repeat IN ('daily', 'weekly', 'monthly')", name="ck_tasks_repeat"),
+        CheckConstraint("repeat IS NULL OR remind_at IS NOT NULL", name="ck_tasks_repeat_time"),
         Index("ix_tasks_household_status_due", "household_id", "status", "due_date"),
     )
+
+
+class ReminderDelivery(Base):
+    __tablename__ = "reminder_deliveries"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), index=True)
+    scheduled_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    recipient_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
+    status: Mapped[str] = mapped_column(String(12), default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(String(300))
+    sent_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+    __table_args__ = (UniqueConstraint("task_id", "scheduled_at", name="uq_reminder_task_occurrence"),)
+
+
+class ChannelLink(Base):
+    __tablename__ = "channel_links"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id"), index=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    platform: Mapped[str] = mapped_column(String(20))
+    external_user_id: Mapped[str] = mapped_column(String(100))
+    chat_id: Mapped[str] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("platform", "external_user_id", name="uq_channel_external_user"),
+        UniqueConstraint("user_id", "platform", name="uq_user_channel"),
+    )
+
+
+class TelegramLinkCode(Base):
+    __tablename__ = "telegram_link_codes"
+
+    code_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
+
+
+class TelegramUpdate(Base):
+    __tablename__ = "telegram_updates"
+
+    update_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    response: Mapped[str] = mapped_column(Text)
+    processed_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class TelegramPending(Base):
+    __tablename__ = "telegram_pending"
+
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    original_text: Mapped[str] = mapped_column(Text)
+    question: Mapped[str] = mapped_column(String(1000))
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
+
+
+class WorkerCursor(Base):
+    __tablename__ = "worker_cursors"
+
+    name: Mapped[str] = mapped_column(String(40), primary_key=True)
+    value: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class GoogleOAuthState(Base):
+    __tablename__ = "google_oauth_states"
+
+    state_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
+
+
+class GoogleConnection(Base):
+    __tablename__ = "google_connections"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id"), index=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), unique=True)
+    email: Mapped[str] = mapped_column(String(320))
+    refresh_token_encrypted: Mapped[str] = mapped_column(Text)
+    gmail_query: Mapped[str] = mapped_column(String(500), default="in:inbox")
+    gmail_history_id: Mapped[str | None] = mapped_column(String(100))
+    gmail_page_token: Mapped[str | None] = mapped_column(String(500))
+    last_gmail_sync_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    last_error: Mapped[str | None] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class GoogleCalendar(Base):
+    __tablename__ = "google_calendars"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    connection_id: Mapped[str] = mapped_column(ForeignKey("google_connections.id"), index=True)
+    external_id: Mapped[str] = mapped_column(String(500))
+    title: Mapped[str] = mapped_column(String(250))
+    mode: Mapped[str] = mapped_column(String(10), default="full")
+    outbound_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    sync_token: Mapped[str | None] = mapped_column(Text)
+    last_synced_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    last_full_sync_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+    __table_args__ = (
+        UniqueConstraint("connection_id", "external_id", name="uq_google_calendar_connection_external"),
+        CheckConstraint("mode IN ('full', 'busy')", name="ck_google_calendars_mode"),
+    )
+
+
+class EmailProcessed(Base):
+    __tablename__ = "email_processed"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    connection_id: Mapped[str] = mapped_column(ForeignKey("google_connections.id"), index=True)
+    message_id: Mapped[str] = mapped_column(String(100))
+    processed_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+    __table_args__ = (UniqueConstraint("connection_id", "message_id", name="uq_email_processed_message"),)
+
+
+class Proposal(HouseholdEntity, Base):
+    __tablename__ = "proposals"
+
+    connection_id: Mapped[str] = mapped_column(ForeignKey("google_connections.id"), index=True)
+    message_id: Mapped[str] = mapped_column(String(100))
+    thread_id: Mapped[str] = mapped_column(String(100))
+    item_index: Mapped[int] = mapped_column(Integer)
+    sender: Mapped[str | None] = mapped_column(String(320))
+    subject: Mapped[str | None] = mapped_column(String(500))
+    snippet: Mapped[str | None] = mapped_column(String(500))
+    kind: Mapped[str] = mapped_column(String(20))
+    data: Mapped[dict[str, Any]] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(12), default="pending")
+    target_id: Mapped[str | None] = mapped_column(String(36))
+
+    __table_args__ = (UniqueConstraint("connection_id", "message_id", "item_index", name="uq_proposal_email_item"),)
+
+
+class CalendarEventLink(Base):
+    __tablename__ = "calendar_event_links"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    calendar_id: Mapped[str] = mapped_column(ForeignKey("google_calendars.id"), index=True)
+    event_id: Mapped[str] = mapped_column(ForeignKey("events.id"), unique=True)
+    external_id: Mapped[str] = mapped_column(String(500))
+    etag: Mapped[str | None] = mapped_column(String(200))
+    local_version: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(12), default="synced")
+    remote_payload: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    last_synced_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+    __table_args__ = (UniqueConstraint("calendar_id", "external_id", name="uq_calendar_external_event"),)
 
 
 class ShoppingItem(HouseholdEntity, Base):
