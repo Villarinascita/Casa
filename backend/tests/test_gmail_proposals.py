@@ -1,4 +1,5 @@
 import base64
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -227,3 +228,75 @@ def test_gmail_no_notice_if_message_transaction_fails(db_factory, seed):
         assert db.scalar(select(Event)) is None
         assert db.scalar(select(EmailCreationNotice)) is None
         assert db.scalar(select(EmailProcessed)).message_id == "mail-mixed"
+
+
+def test_gmail_event_with_bogus_member_id_still_creates_event_and_marks_processed(db_factory, seed):
+    """Root cause del finding §1: un member_id inventato dal modello non deve far fallire
+    il flush (FK) né lasciare il messaggio permanentemente non processato."""
+    with db_factory() as db:
+        user = db.scalar(select(User).where(User.login == "luca"))
+        connection = GoogleConnection(household_id=seed["Rossi"], user_id=user.id,
+                                      email="luca@gmail.com", refresh_token_encrypted="encrypted")
+        db.add(connection)
+        db.commit()
+        message = {"id": "mail-bogus-member", "threadId": "t", "snippet": "Riunione",
+                   "payload": {"headers": [{"name": "From", "value": "segreteria@scuola.it"}],
+                               "body": {"data": base64.urlsafe_b64encode(b"Riunione scuola").decode()}}}
+
+        def analyze(text):
+            return {"actions": [{"kind": "event", "data": {
+                "title": "Riunione scuola", "start_at": "2026-10-03T17:00:00+02:00",
+                "member_id": "does-not-exist"}}], "bills": []}
+
+        assert ingest_message(db, connection, message, analyze, "Europe/Rome") == 1
+        event = db.scalar(select(Event))
+        assert event is not None and event.member_id is None
+        assert db.scalar(select(EmailProcessed)).message_id == "mail-bogus-member"
+
+
+def test_gmail_bad_bill_is_skipped_without_affecting_other_bill_in_same_message(db_factory, seed):
+    """Finding §2: una voce bolletta malformata non deve travolgere le altre bollette dello
+    stesso messaggio."""
+    with db_factory() as db:
+        user = db.scalar(select(User).where(User.login == "luca"))
+        connection = GoogleConnection(household_id=seed["Rossi"], user_id=user.id,
+                                      email="luca@gmail.com", refresh_token_encrypted="encrypted")
+        db.add(connection)
+        db.commit()
+        message = {"id": "mail-two-bills", "threadId": "t", "snippet": "Bollette",
+                   "payload": {"headers": [], "body": {"data": base64.urlsafe_b64encode(b"Bollette").decode()}}}
+
+        def analyze(text):
+            return {"actions": [], "bills": [
+                {"category": "Bollette", "title": "Malformata", "amount": 10, "currency": "EUR"},
+                {"category": "Bollette", "title": "Valida", "amount": 20},
+            ]}
+
+        assert ingest_message(db, connection, message, analyze, "Europe/Rome") == 1
+        bill = db.scalar(select(Bill))
+        assert bill.title == "Valida"
+        assert db.scalar(select(EmailProcessed)).message_id == "mail-two-bills"
+
+
+def test_gmail_past_dated_event_creates_no_notice_but_still_creates_event(db_factory, seed):
+    """Finding §3: un evento di backfill con data ormai passata non deve accodare la
+    notifica Telegram di controllo, ma va comunque creato."""
+    with db_factory() as db:
+        user = db.scalar(select(User).where(User.login == "luca"))
+        connection = GoogleConnection(household_id=seed["Rossi"], user_id=user.id,
+                                      email="luca@gmail.com", refresh_token_encrypted="encrypted")
+        db.add(connection)
+        db.commit()
+        message = {"id": "mail-old-event", "threadId": "t", "snippet": "Vecchia riunione",
+                   "payload": {"headers": [{"name": "From", "value": "segreteria@scuola.it"}],
+                               "body": {"data": base64.urlsafe_b64encode(b"Vecchia riunione").decode()}}}
+
+        def analyze(text):
+            return {"actions": [{"kind": "event", "data": {
+                "title": "Vecchia riunione", "start_at": "2026-01-03T17:00:00+01:00"}}], "bills": []}
+
+        now = datetime(2026, 9, 25, tzinfo=timezone.utc)
+        assert ingest_message(db, connection, message, analyze, "Europe/Rome", now) == 1
+        event = db.scalar(select(Event))
+        assert event is not None and event.title == "Vecchia riunione"
+        assert db.scalar(select(EmailCreationNotice)) is None

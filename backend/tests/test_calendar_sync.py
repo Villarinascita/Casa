@@ -108,3 +108,32 @@ def test_user_can_resolve_conflict_by_accepting_google_version(luca, db_factory,
     assert response.status_code == 200, response.text
     assert response.json()["status"] == "synced"
     assert luca.get("/api/v1/events").json()[0]["title"] == "Google"
+
+
+def test_gmail_sourced_event_is_not_pushed_to_google_calendar(db_factory, seed):
+    """Finding §3: gli eventi creati automaticamente da un'email restano locali finché
+    l'utente non ci interagisce; niente push automatico verso Google Calendar."""
+    class FakeService:
+        def access_token(self, connection):
+            return "access"
+
+        class api:
+            @staticmethod
+            def post(url, token, body):
+                raise AssertionError("Non deve chiamare l'API di Google per un evento source=gmail")
+
+    with db_factory() as db:
+        user = db.scalar(select(User).where(User.login == "luca"))
+        connection = GoogleConnection(household_id=seed["Rossi"], user_id=user.id,
+                                      email="luca@gmail.com", refresh_token_encrypted="encrypted")
+        db.add(connection)
+        db.flush()
+        calendar = GoogleCalendar(connection_id=connection.id, external_id="personal", title="Personale",
+                                  mode="full", outbound_default=True)
+        db.add(calendar)
+        event = Event(household_id=seed["Rossi"], created_by=user.id, title="Riunione scuola",
+                      start_at=datetime(2026, 9, 29, 15, tzinfo=timezone.utc), all_day=False, source="gmail")
+        db.add(event)
+        db.commit()
+        assert push_local_event(db, connection, event, FakeService()) == "ignored"
+        assert db.scalar(select(CalendarEventLink)) is None

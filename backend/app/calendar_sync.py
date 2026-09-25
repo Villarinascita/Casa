@@ -109,7 +109,11 @@ def push_local_event(db: Session, connection: GoogleConnection, event: Event, se
         url = ("https://www.googleapis.com/calendar/v3/calendars/" + quote(calendar.external_id, safe="")
                + "/events/" + quote(link.external_id, safe=""))
     else:
-        if event.deleted_at is not None or event.source.startswith("google") or event.created_by != connection.user_id:
+        if (event.deleted_at is not None or event.source.startswith("google") or event.source == "gmail"
+                or event.created_by != connection.user_id):
+            # Gli eventi creati automaticamente da un'email restano locali finché l'utente
+            # non ci interagisce: niente push immediato verso Google Calendar, sia per il
+            # backfill di un anno che per qualsiasi email futura (finding §3 revisione finale).
             return "ignored"
         calendar = db.scalar(select(GoogleCalendar).where(GoogleCalendar.connection_id == connection.id,
                                                            GoogleCalendar.outbound_default.is_(True),

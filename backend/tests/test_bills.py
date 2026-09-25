@@ -64,3 +64,69 @@ def test_no_reminder_without_telegram_link_stays_pending(db_factory, seed):
         now = datetime(2026, 9, 25, tzinfo=timezone.utc)
         assert dispatch_bill_reminders(db, lambda *a: None, now) == 0
         assert db.scalar(select(Bill)).found_reminder_sent_at is None
+
+
+def test_due_soon_reminder_skips_bill_already_past_due_date(db_factory, seed):
+    """Finding §3: una bolletta di backfill già scaduta non deve generare il promemoria
+    'in scadenza' (fuorviante), solo l'eventuale 'trovata'."""
+    with db_factory() as db:
+        user = db.scalar(select(User).where(User.login == "luca"))
+        _link_telegram(db, user.id, seed["Rossi"])
+        now = datetime(2026, 9, 25, tzinfo=timezone.utc)
+        past = Bill(household_id=seed["Rossi"], created_by=user.id, category="Bollette", title="Vecchia",
+                    amount=10, due_date=date(2026, 9, 1), found_reminder_sent_at=now)
+        db.add(past)
+        db.commit()
+
+        sent = []
+        assert dispatch_bill_reminders(db, lambda chat_id, text: sent.append((chat_id, text)), now) == 0
+        assert sent == []
+        assert db.scalar(select(Bill)).due_reminder_sent_at is None
+
+
+def test_failing_send_does_not_block_other_bill_reminders_in_same_batch(db_factory, seed):
+    """Finding §4: un invio Telegram fallito su una bolletta non deve bloccare le altre
+    dello stesso giro."""
+    with db_factory() as db:
+        user = db.scalar(select(User).where(User.login == "luca"))
+        _link_telegram(db, user.id, seed["Rossi"])
+        now = datetime(2026, 9, 25, tzinfo=timezone.utc)
+        first = Bill(household_id=seed["Rossi"], created_by=user.id, category="Bollette", title="Prima", amount=10)
+        second = Bill(household_id=seed["Rossi"], created_by=user.id, category="Bollette", title="Seconda", amount=20)
+        db.add_all([first, second])
+        db.commit()
+
+        calls = []
+
+        def flaky_send(chat_id, text):
+            calls.append(text)
+            if "Prima" in text:
+                raise RuntimeError("Telegram non raggiungibile")
+
+        assert dispatch_bill_reminders(db, flaky_send, now) == 1
+        db.refresh(first)
+        db.refresh(second)
+        assert first.found_reminder_sent_at is None
+        assert second.found_reminder_sent_at == now
+        assert len(calls) == 2
+
+
+def test_bill_without_telegram_link_does_not_starve_linked_bill(db_factory, seed):
+    """Finding §5: righe non inviabili (nessun ChannelLink) non devono occupare il
+    .limit(100) a scapito di righe più recenti ma inviabili."""
+    with db_factory() as db:
+        user = db.scalar(select(User).where(User.login == "luca"))
+        other = db.scalar(select(User).where(User.login == "anna"))
+        _link_telegram(db, user.id, seed["Rossi"])
+        now = datetime(2026, 9, 25, tzinfo=timezone.utc)
+        for i in range(3):
+            db.add(Bill(household_id=seed["Rossi"], created_by=other.id, category="Bollette",
+                        title=f"Senza link {i}", amount=1))
+        linked = Bill(household_id=seed["Rossi"], created_by=user.id, category="Bollette",
+                     title="Con link", amount=1)
+        db.add(linked)
+        db.commit()
+
+        sent = []
+        assert dispatch_bill_reminders(db, lambda chat_id, text: sent.append((chat_id, text)), now) == 1
+        assert len(sent) == 1 and "Con link" in sent[0][1]

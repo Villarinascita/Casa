@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 
 from pydantic import ValidationError
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from .hermes_client import HermesInvalidResponse
@@ -40,8 +41,22 @@ def _creation_summary(kind: str, obj, sender: str, timezone_name: str) -> str:
     return f"Ho aggiunto l'attività «{obj.title}»{when}, da un'email di {sender}. Cancellala se non era vera."
 
 
+def _is_stale(model, obj, now: datetime) -> bool:
+    """Vero se l'oggetto appena creato (backfill di un'email vecchia) ha una data di
+    riferimento di oltre un giorno nel passato: in tal caso non si accoda la notifica
+    Telegram di controllo, per non far esplodere il canale al primo collegamento
+    dell'account Gmail (finding §3 revisione finale). L'oggetto resta comunque creato."""
+    cutoff = now.date() - timedelta(days=1)
+    if model is Event:
+        reference = obj.start_date if obj.all_day else (obj.start_at.date() if obj.start_at else None)
+        return bool(reference and reference < cutoff)
+    reference = getattr(obj, "due_date", None)
+    return bool(reference and reference < cutoff)
+
+
 def ingest_message(db: Session, connection: GoogleConnection, message: dict,
-                   analyze: Callable[[str], dict], timezone_name: str) -> int:
+                   analyze: Callable[[str], dict], timezone_name: str, now: datetime | None = None) -> int:
+    now = now or datetime.now(timezone.utc)
     message_id = message["id"]
     seen = db.scalar(select(EmailProcessed).where(EmailProcessed.connection_id == connection.id,
                                                    EmailProcessed.message_id == message_id))
@@ -75,22 +90,34 @@ def ingest_message(db: Session, connection: GoogleConnection, message: dict,
                     proposal_index += 1
                 else:
                     data = validated.model_dump()
+                    # Un appuntamento/attività estratti da email non devono mai assegnarsi
+                    # automaticamente a un familiare: un member_id inventato dal modello farebbe
+                    # fallire il flush (FK) e bloccherebbe per sempre l'ingestione di questo
+                    # messaggio (vedi finding §1 revisione finale).
+                    data.pop("member_id", None)
                     obj = model(household_id=connection.household_id, created_by=connection.user_id, **data)
                     if model is Event:
                         obj.source = "gmail"
                     db.add(obj)
                     db.flush()
-                    notices.append((action.kind, obj.id, _creation_summary(action.kind, obj, sender, timezone_name)))
+                    if not _is_stale(model, obj, now):
+                        notices.append((action.kind, obj.id,
+                                       _creation_summary(action.kind, obj, sender, timezone_name)))
                 created_count += 1
         for item in bills:
-            bill_data = BillIn.model_validate(item).model_dump()
+            try:
+                bill_data = BillIn.model_validate(item).model_dump()
+            except (ValidationError, KeyError):
+                # Una voce malformata non deve far saltare le altre bollette né le azioni
+                # già create nello stesso messaggio (finding §2 revisione finale).
+                continue
             if bill_data["amount"] is None:
                 # Nessun importo individuabile: meglio non creare la voce che indovinare (§3 del design).
                 continue
             db.add(Bill(household_id=connection.household_id, created_by=connection.user_id,
                         source_sender=sender or None, source_subject=subject or None, **bill_data))
             created_count += 1
-    except (HermesInvalidResponse, ValidationError, KeyError):
+    except (HermesInvalidResponse, ValidationError, KeyError, SQLAlchemyError):
         # Il modello ha risposto con qualcosa di inutilizzabile per questo messaggio: si
         # segna comunque come processato, altrimenti il worker lo ritenterebbe a ogni giro.
         db.rollback()
@@ -122,7 +149,7 @@ def sync_gmail(db: Session, connection: GoogleConnection, service,
         message = service.api.get(
             f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{item['id']}", token,
             {"format": "full"})
-        created += ingest_message(db, connection, message, analyze, timezone_name)
+        created += ingest_message(db, connection, message, analyze, timezone_name, now)
     connection.gmail_page_token = page.get("nextPageToken")
     if not connection.gmail_page_token:
         connection.last_gmail_sync_at = now

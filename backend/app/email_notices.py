@@ -12,7 +12,10 @@ from .models import ChannelLink, EmailCreationNotice
 
 
 def dispatch_email_creation_notices(db: Session, send: Callable[[str, str], None], now: datetime) -> int:
-    notices = db.scalars(select(EmailCreationNotice).where(EmailCreationNotice.sent_at.is_(None))
+    linked_recipients = select(ChannelLink.user_id).where(ChannelLink.platform == "telegram")
+    notices = db.scalars(select(EmailCreationNotice).where(
+        EmailCreationNotice.sent_at.is_(None),
+        EmailCreationNotice.recipient_user_id.in_(linked_recipients))
                          .order_by(EmailCreationNotice.created_at).limit(100)).all()
     sent = 0
     for notice in notices:
@@ -20,7 +23,12 @@ def dispatch_email_creation_notices(db: Session, send: Callable[[str, str], None
                                                     ChannelLink.platform == "telegram"))
         if not link:
             continue
-        send(link.chat_id, notice.summary)
+        try:
+            send(link.chat_id, notice.summary)
+        except Exception:
+            # Un invio fallito non deve bloccare le notifiche successive nello stesso giro
+            # (finding §4 revisione finale); la riga resta senza sent_at e viene ritentata.
+            continue
         notice.sent_at = now
         sent += 1
         db.commit()

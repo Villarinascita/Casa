@@ -20,8 +20,20 @@ def _send_to(db: Session, send: Callable[[str, str], None], recipient_user_id: s
                                                 ChannelLink.platform == "telegram"))
     if not link:
         return False
-    send(link.chat_id, text)
+    try:
+        send(link.chat_id, text)
+    except Exception:
+        # Un invio fallito (es. bot bloccato) non deve interrompere il resto del giro: la
+        # riga resta senza timestamp e viene ritentata al ciclo successivo (finding §4).
+        return False
     return True
+
+
+def _linked_recipients():
+    """Sottoquery dei destinatari che hanno un canale Telegram collegato: esclude dal
+    batch le righe che non potrebbero comunque essere inviate, così non affamano il
+    `.limit(100)` a scapito di righe più recenti e inviabili (finding §5 revisione finale)."""
+    return select(ChannelLink.user_id).where(ChannelLink.platform == "telegram")
 
 
 def _found_text(bill: Bill) -> str:
@@ -38,7 +50,8 @@ def _due_text(bill: Bill) -> str:
 def dispatch_bill_reminders(db: Session, send: Callable[[str, str], None], now: datetime) -> int:
     sent = 0
     found = db.scalars(select(Bill).where(Bill.found_reminder_sent_at.is_(None),
-                                          Bill.deleted_at.is_(None)).limit(100)).all()
+                                          Bill.deleted_at.is_(None),
+                                          Bill.created_by.in_(_linked_recipients())).limit(100)).all()
     for bill in found:
         if bill.created_by and _send_to(db, send, bill.created_by, _found_text(bill)):
             bill.found_reminder_sent_at = now
@@ -50,7 +63,9 @@ def dispatch_bill_reminders(db: Session, send: Callable[[str, str], None], now: 
                                              Bill.deleted_at.is_(None),
                                              Bill.payment_state != "pagato",
                                              Bill.due_date.is_not(None),
-                                             Bill.due_date <= threshold).limit(100)).all()
+                                             Bill.due_date >= now.date(),
+                                             Bill.due_date <= threshold,
+                                             Bill.created_by.in_(_linked_recipients())).limit(100)).all()
     for bill in due_soon:
         if bill.created_by and _send_to(db, send, bill.created_by, _due_text(bill)):
             bill.due_reminder_sent_at = now

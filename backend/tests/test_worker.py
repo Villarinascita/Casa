@@ -127,3 +127,52 @@ def test_email_creation_notice_waits_for_telegram_link(db_factory, seed):
         now = datetime(2026, 9, 25, tzinfo=timezone.utc)
         assert dispatch_email_creation_notices(db, lambda *a: None, now) == 0
         assert db.scalar(select(EmailCreationNotice)).sent_at is None
+
+
+def test_email_notice_failing_send_does_not_block_next_notice_in_same_batch(db_factory, seed):
+    """Finding §4: un invio fallito su una notifica non deve bloccare le successive dello
+    stesso giro."""
+    with db_factory() as db:
+        user = db.scalar(select(User).where(User.login == "luca"))
+        db.add(ChannelLink(household_id=seed["Rossi"], user_id=user.id, platform="telegram",
+                           external_user_id="1", chat_id="1"))
+        db.add(EmailCreationNotice(household_id=seed["Rossi"], entity_type="event", entity_id="e1",
+                                   summary="Prima", recipient_user_id=user.id))
+        db.add(EmailCreationNotice(household_id=seed["Rossi"], entity_type="event", entity_id="e2",
+                                   summary="Seconda", recipient_user_id=user.id))
+        db.commit()
+
+        calls = []
+
+        def flaky_send(chat_id, text):
+            calls.append(text)
+            if text == "Prima":
+                raise RuntimeError("Telegram non raggiungibile")
+
+        now = datetime(2026, 9, 25, tzinfo=timezone.utc)
+        assert dispatch_email_creation_notices(db, flaky_send, now) == 1
+        assert calls == ["Prima", "Seconda"]
+        notices = {n.summary: n.sent_at for n in db.scalars(select(EmailCreationNotice)).all()}
+        assert notices["Prima"] is None
+        assert notices["Seconda"] == now
+
+
+def test_email_notice_without_telegram_link_does_not_starve_linked_notice(db_factory, seed):
+    """Finding §5: notifiche senza ChannelLink non devono occupare il .limit(100) a scapito
+    di notifiche più recenti ma inviabili."""
+    with db_factory() as db:
+        user = db.scalar(select(User).where(User.login == "luca"))
+        other = db.scalar(select(User).where(User.login == "anna"))
+        db.add(ChannelLink(household_id=seed["Rossi"], user_id=user.id, platform="telegram",
+                           external_user_id="1", chat_id="1"))
+        for i in range(3):
+            db.add(EmailCreationNotice(household_id=seed["Rossi"], entity_type="event", entity_id=f"x{i}",
+                                       summary=f"Senza link {i}", recipient_user_id=other.id))
+        db.add(EmailCreationNotice(household_id=seed["Rossi"], entity_type="event", entity_id="e-ok",
+                                   summary="Con link", recipient_user_id=user.id))
+        db.commit()
+
+        sent = []
+        now = datetime(2026, 9, 25, tzinfo=timezone.utc)
+        assert dispatch_email_creation_notices(db, lambda chat_id, text: sent.append(text), now) == 1
+        assert sent == ["Con link"]
