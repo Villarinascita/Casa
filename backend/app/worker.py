@@ -22,29 +22,35 @@ logger = logging.getLogger(__name__)
 
 
 def run_google_once(db: Session, service: GoogleService, hermes_email: HermesClient, now: datetime) -> None:
-    """Isola gli errori di ogni account; riprova al giro successivo."""
+    """Isola gli errori di ogni account e di ogni fase: Gmail in errore (es. Hermes non
+    configurato) non deve impedire la sincronizzazione di Calendar per lo stesso account."""
     for connection in db.scalars(select(GoogleConnection)).all():
+        gmail_error = None
         try:
             if connection.last_gmail_sync_at is None or (now - connection.last_gmail_sync_at).total_seconds() >= 600:
                 timezone_name = db.get(Household, connection.household_id).timezone
                 sync_gmail(db, connection, service,
                            lambda text: hermes_email.analyze_email(text, timezone_name, settings.hermes_email_model), now)
+        except Exception as exc:
+            db.rollback()
+            connection = db.get(GoogleConnection, connection.id)
+            gmail_error = str(exc)[:500]
+        try:
             calendars = db.scalars(select(GoogleCalendar).where(GoogleCalendar.connection_id == connection.id)).all()
-            if not calendars:
-                continue
-            if any(c.last_synced_at is None or (now - c.last_synced_at).total_seconds() >= 600 for c in calendars):
+            if calendars and any(c.last_synced_at is None or (now - c.last_synced_at).total_seconds() >= 600
+                                  for c in calendars):
                 for calendar in calendars:
                     if calendar.last_synced_at is None or (now - calendar.last_synced_at).total_seconds() >= 600:
                         sync_calendar(db, connection, calendar, service, now)
                 events = db.scalars(select(Event).where(Event.household_id == connection.household_id)).all()
                 for event in events:
                     push_local_event(db, connection, event, service)
-            connection.last_error = None
+            connection.last_error = gmail_error
             db.commit()
         except Exception as exc:
             db.rollback()
             connection = db.get(GoogleConnection, connection.id)
-            connection.last_error = str(exc)[:500]
+            connection.last_error = f"{gmail_error} | {exc}"[:500] if gmail_error else str(exc)[:500]
             db.commit()
             logger.exception("Sincronizzazione Google fallita per %s", connection.email)
 
