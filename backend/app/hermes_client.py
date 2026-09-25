@@ -10,7 +10,12 @@ from .security import Ctx
 
 
 class HermesUnavailable(Exception):
-    pass
+    """Hermes non è raggiungibile o non configurato: vale la pena riprovare più tardi."""
+
+
+class HermesInvalidResponse(HermesUnavailable):
+    """Hermes ha risposto ma il contenuto non è utilizzabile: riprovare lo stesso messaggio
+    non cambierebbe nulla, non va trattato come un'interruzione del servizio."""
 
 
 SYSTEM_PROMPT = """Sei l'interprete di richieste per Insieme, un gestionale familiare.
@@ -77,9 +82,14 @@ class HermesClient:
                                                            {"role": "user", "content":
                                                             f"Fuso: {timezone_name}\nEmail:\n{text[:12000]}"}]})
             response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise HermesUnavailable("Hermes non raggiungibile") from exc
+        try:
             result = json.loads(response.json()["choices"][0]["message"]["content"])
             if not isinstance(result, dict) or not isinstance(result.get("actions"), list):
                 raise ValueError("Formato non valido")
             return result
-        except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as exc:
-            raise HermesUnavailable("Hermes non ha restituito proposte valide") from exc
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            # Contenuto del modello inutilizzabile per QUESTO messaggio: non è un'interruzione
+            # del servizio, il chiamante non deve riprovarlo all'infinito.
+            raise HermesInvalidResponse("Hermes non ha restituito proposte valide per questo messaggio") from exc

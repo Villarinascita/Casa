@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .hermes_client import HermesInvalidResponse
 from .models import EmailProcessed, GoogleConnection, Proposal
 from .routers.assistant import ACTION_TYPES
 from .schemas import ActionBatchIn
@@ -38,18 +39,24 @@ def ingest_message(db: Session, connection: GoogleConnection, message: dict,
     subject = headers.get("subject", "")[:500]
     snippet = message.get("snippet", "")[:500]
     body = _body_text(message.get("payload", {}))[:12000] or snippet
-    result = analyze(f"Da: {sender}\nOggetto: {subject}\nTesto: {body}")
-    actions = result.get("actions") or []
-    batch = ActionBatchIn.model_validate({"actions": actions}) if actions else None
-    if batch:
-        for index, action in enumerate(batch.actions):
-            schema, _ = ACTION_TYPES[action.kind]
-            data = schema.model_validate(action.data).model_dump(mode="json")
-            db.add(Proposal(household_id=connection.household_id, created_by=connection.user_id,
-                            connection_id=connection.id, message_id=message_id,
-                            thread_id=message.get("threadId", ""), item_index=index,
-                            sender=sender, subject=subject, snippet=snippet,
-                            kind=action.kind, data=data))
+    try:
+        result = analyze(f"Da: {sender}\nOggetto: {subject}\nTesto: {body}")
+        actions = result.get("actions") or []
+        batch = ActionBatchIn.model_validate({"actions": actions}) if actions else None
+        if batch:
+            for index, action in enumerate(batch.actions):
+                schema, _ = ACTION_TYPES[action.kind]
+                data = schema.model_validate(action.data).model_dump(mode="json")
+                db.add(Proposal(household_id=connection.household_id, created_by=connection.user_id,
+                                connection_id=connection.id, message_id=message_id,
+                                thread_id=message.get("threadId", ""), item_index=index,
+                                sender=sender, subject=subject, snippet=snippet,
+                                kind=action.kind, data=data))
+    except (HermesInvalidResponse, ValidationError, KeyError):
+        # Il modello ha risposto con qualcosa di inutilizzabile per questo messaggio: si
+        # segna comunque come processato, altrimenti il worker lo ritenterebbe a ogni giro.
+        db.rollback()
+        actions = []
     db.add(EmailProcessed(connection_id=connection.id, message_id=message_id))
     db.commit()
     return len(actions)
