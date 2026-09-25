@@ -195,8 +195,8 @@ export function mount(root) {
   });
 
   $('#export', root).addEventListener('click', () => {
-    const { household, members, events, tasks, shopping } = state;
-    const data = { exported_at: new Date().toISOString(), household, members, events, tasks, shopping };
+    const { household, members, events, tasks, shopping, bills } = state;
+    const data = { exported_at: new Date().toISOString(), household, members, events, tasks, shopping, bills };
     const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
     const a = document.createElement('a');
     a.href = url;
