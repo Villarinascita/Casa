@@ -2,8 +2,9 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select
 
-from app.models import Event, GoogleCalendar, GoogleConnection, User
+from app.models import ChannelLink, EmailCreationNotice, Event, GoogleCalendar, GoogleConnection, User
 from app.worker import run_google_once, run_once
+from app.email_notices import dispatch_email_creation_notices
 
 
 def test_worker_saves_telegram_update_and_advances_cursor(luca, db_factory):
@@ -98,3 +99,31 @@ def test_google_worker_syncs_calendar_even_if_gmail_fails(db_factory, seed, monk
         connection = db.get(GoogleConnection, connection.id)
         assert calls == ["calendar"]
         assert connection.last_error is not None and "Hermes" in connection.last_error
+
+
+def test_email_creation_notice_sent_once(db_factory, seed):
+    with db_factory() as db:
+        user = db.scalar(select(User).where(User.login == "luca"))
+        db.add(ChannelLink(household_id=seed["Rossi"], user_id=user.id, platform="telegram",
+                           external_user_id="1", chat_id="1"))
+        db.add(EmailCreationNotice(household_id=seed["Rossi"], entity_type="event", entity_id="e1",
+                                   summary="Ho aggiunto...", recipient_user_id=user.id))
+        db.commit()
+
+        sent = []
+        now = datetime(2026, 9, 25, tzinfo=timezone.utc)
+        assert dispatch_email_creation_notices(db, lambda chat_id, text: sent.append((chat_id, text)), now) == 1
+        assert sent == [("1", "Ho aggiunto...")]
+        assert dispatch_email_creation_notices(db, lambda *a: None, now) == 0
+
+
+def test_email_creation_notice_waits_for_telegram_link(db_factory, seed):
+    with db_factory() as db:
+        user = db.scalar(select(User).where(User.login == "luca"))
+        db.add(EmailCreationNotice(household_id=seed["Rossi"], entity_type="task", entity_id="t1",
+                                   summary="x", recipient_user_id=user.id))
+        db.commit()
+
+        now = datetime(2026, 9, 25, tzinfo=timezone.utc)
+        assert dispatch_email_creation_notices(db, lambda *a: None, now) == 0
+        assert db.scalar(select(EmailCreationNotice)).sent_at is None
