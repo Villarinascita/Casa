@@ -1,17 +1,19 @@
-"""Estrazione di proposte Gmail senza conservare il testo integrale dei messaggi."""
+"""Estrazione da Gmail: spesa resta una Proposal da confermare; appuntamenti, attività e
+bollette si creano direttamente (vedi docs/superpowers/specs/2026-09-25-bollette-costi-casa-design.md)."""
 
 import base64
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .hermes_client import HermesInvalidResponse
-from .models import EmailProcessed, GoogleConnection, Proposal
+from .models import Bill, EmailCreationNotice, EmailProcessed, Event, GoogleConnection, Proposal
 from .routers.assistant import ACTION_TYPES
-from .schemas import ActionBatchIn
+from .schemas import ActionBatchIn, BillIn
 
 
 def _body_text(payload: dict) -> str:
@@ -26,8 +28,20 @@ def _body_text(payload: dict) -> str:
     return "\n".join(filter(None, (_body_text(part) for part in payload.get("parts", []))))
 
 
+def _creation_summary(kind: str, obj, sender: str, timezone_name: str) -> str:
+    if kind == "event":
+        if obj.all_day:
+            when = f"il {obj.start_date:%d/%m}"
+        else:
+            local = obj.start_at.astimezone(ZoneInfo(timezone_name))
+            when = f"il {local:%d/%m} alle {local:%H:%M}"
+        return f"Ho aggiunto l'appuntamento «{obj.title}» {when}, da un'email di {sender}. Cancellalo se non era vero."
+    when = f" entro il {obj.due_date:%d/%m}" if obj.due_date else ""
+    return f"Ho aggiunto l'attività «{obj.title}»{when}, da un'email di {sender}. Cancellala se non era vera."
+
+
 def ingest_message(db: Session, connection: GoogleConnection, message: dict,
-                   analyze: Callable[[str], dict]) -> int:
+                   analyze: Callable[[str], dict], timezone_name: str) -> int:
     message_id = message["id"]
     seen = db.scalar(select(EmailProcessed).where(EmailProcessed.connection_id == connection.id,
                                                    EmailProcessed.message_id == message_id))
@@ -39,31 +53,61 @@ def ingest_message(db: Session, connection: GoogleConnection, message: dict,
     subject = headers.get("subject", "")[:500]
     snippet = message.get("snippet", "")[:500]
     body = _body_text(message.get("payload", {}))[:12000] or snippet
+    created_count = 0
+    notices: list[tuple[str, str, str]] = []
     try:
         result = analyze(f"Da: {sender}\nOggetto: {subject}\nTesto: {body}")
         actions = result.get("actions") or []
+        bills = result.get("bills") or []
         batch = ActionBatchIn.model_validate({"actions": actions}) if actions else None
         if batch:
-            for index, action in enumerate(batch.actions):
-                schema, _ = ACTION_TYPES[action.kind]
-                data = schema.model_validate(action.data).model_dump(mode="json")
-                db.add(Proposal(household_id=connection.household_id, created_by=connection.user_id,
-                                connection_id=connection.id, message_id=message_id,
-                                thread_id=message.get("threadId", ""), item_index=index,
-                                sender=sender, subject=subject, snippet=snippet,
-                                kind=action.kind, data=data))
+            proposal_index = 0
+            for action in batch.actions:
+                schema, model = ACTION_TYPES[action.kind]
+                validated = schema.model_validate(action.data)
+                if action.kind == "shopping":
+                    data = validated.model_dump(mode="json")
+                    db.add(Proposal(household_id=connection.household_id, created_by=connection.user_id,
+                                    connection_id=connection.id, message_id=message_id,
+                                    thread_id=message.get("threadId", ""), item_index=proposal_index,
+                                    sender=sender, subject=subject, snippet=snippet,
+                                    kind=action.kind, data=data))
+                    proposal_index += 1
+                else:
+                    data = validated.model_dump()
+                    obj = model(household_id=connection.household_id, created_by=connection.user_id, **data)
+                    if model is Event:
+                        obj.source = "gmail"
+                    db.add(obj)
+                    db.flush()
+                    notices.append((action.kind, obj.id, _creation_summary(action.kind, obj, sender, timezone_name)))
+                created_count += 1
+        for item in bills:
+            bill_data = BillIn.model_validate(item).model_dump()
+            if bill_data["amount"] is None:
+                # Nessun importo individuabile: meglio non creare la voce che indovinare (§3 del design).
+                continue
+            db.add(Bill(household_id=connection.household_id, created_by=connection.user_id,
+                        source_sender=sender or None, source_subject=subject or None, **bill_data))
+            created_count += 1
     except (HermesInvalidResponse, ValidationError, KeyError):
         # Il modello ha risposto con qualcosa di inutilizzabile per questo messaggio: si
         # segna comunque come processato, altrimenti il worker lo ritenterebbe a ogni giro.
         db.rollback()
-        actions = []
+        created_count = 0
+        notices = []
     db.add(EmailProcessed(connection_id=connection.id, message_id=message_id))
     db.commit()
-    return len(actions)
+    for entity_type, entity_id, summary in notices:
+        db.add(EmailCreationNotice(household_id=connection.household_id, entity_type=entity_type,
+                                   entity_id=entity_id, recipient_user_id=connection.user_id, summary=summary))
+    if notices:
+        db.commit()
+    return created_count
 
 
 def sync_gmail(db: Session, connection: GoogleConnection, service,
-               analyze: Callable[[str], dict], now: datetime | None = None) -> int:
+               analyze: Callable[[str], dict], timezone_name: str, now: datetime | None = None) -> int:
     """Scorre i messaggi che corrispondono ai filtri; riprende dalle pagine incomplete."""
     now = now or datetime.now(timezone.utc)
     since = connection.last_gmail_sync_at - timedelta(days=1) if connection.last_gmail_sync_at else now - timedelta(days=365)
@@ -73,15 +117,15 @@ def sync_gmail(db: Session, connection: GoogleConnection, service,
         params["pageToken"] = connection.gmail_page_token
     token = service.access_token(connection)
     page = service.api.get("https://gmail.googleapis.com/gmail/v1/users/me/messages", token, params)
-    proposals = 0
+    created = 0
     for item in page.get("messages", []):
         message = service.api.get(
             f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{item['id']}", token,
             {"format": "full"})
-        proposals += ingest_message(db, connection, message, analyze)
+        created += ingest_message(db, connection, message, analyze, timezone_name)
     connection.gmail_page_token = page.get("nextPageToken")
     if not connection.gmail_page_token:
         connection.last_gmail_sync_at = now
     connection.last_error = None
     db.commit()
-    return proposals
+    return created
