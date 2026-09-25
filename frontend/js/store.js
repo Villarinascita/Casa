@@ -9,6 +9,7 @@ const KINDS = {
   event: { path: '/events', key: 'events' },
   task: { path: '/tasks', key: 'tasks' },
   shopping: { path: '/shopping/items', key: 'shopping' },
+  bill: { path: '/bills', key: 'bills' },
 };
 
 export const state = {
@@ -18,6 +19,7 @@ export const state = {
   events: [],
   tasks: [],
   shopping: [],
+  bills: [],
   loaded: false,
   online: navigator.onLine,
   lastSync: null,
@@ -32,6 +34,7 @@ function sortAll() {
   state.events.sort((a, b) => eventSortKey(a).localeCompare(eventSortKey(b)));
   state.tasks.sort((a, b) => (a.due_date || '9999').localeCompare(b.due_date || '9999') || a.created_at.localeCompare(b.created_at));
   state.shopping.sort((a, b) => a.created_at.localeCompare(b.created_at));
+  state.bills.sort((a, b) => (a.due_date || '9999').localeCompare(b.due_date || '9999') || a.created_at.localeCompare(b.created_at));
 }
 
 export const memberById = (id) => state.members.find((m) => m.id === id);
@@ -89,19 +92,20 @@ export async function login(username, password) {
 
 export async function logout() {
   await api('POST', '/auth/logout').catch(() => {});
-  Object.assign(state, { me: null, household: null, members: [], events: [], tasks: [], shopping: [], loaded: false });
+  Object.assign(state, { me: null, household: null, members: [], events: [], tasks: [], shopping: [], bills: [], loaded: false });
   emit('logout');
 }
 
 export async function refresh() {
-  const [household, members, events, tasks, shopping] = await Promise.all([
+  const [household, members, events, tasks, shopping, bills] = await Promise.all([
     api('GET', '/household'),
     api('GET', '/members'),
     api('GET', '/events'),
     api('GET', '/tasks'),
     api('GET', '/shopping/items'),
+    api('GET', '/bills'),
   ]);
-  Object.assign(state, { household, members, events, tasks, shopping, loaded: true, lastSync: new Date() });
+  Object.assign(state, { household, members, events, tasks, shopping, bills, loaded: true, lastSync: new Date() });
   sortAll();
   emit('refresh');
 }
