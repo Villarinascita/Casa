@@ -1,3 +1,8 @@
+import pytest
+
+from app.schemas import BillIn
+
+
 def create(client, path, payload, **headers):
     response = client.post(f"/api/v1/{path}", json=payload, headers=headers)
     assert response.status_code == 201, response.text
@@ -169,3 +174,8 @@ def test_bill_default_state_and_constraint(luca, db_factory, seed):
         db.commit()
         assert bill.payment_state == "da_pagare"
         assert bill.currency == "EUR"
+
+
+def test_bill_schema_rejects_negative_amount():
+    with pytest.raises(Exception):
+        BillIn(category="Bollette", title="x", amount=-1)

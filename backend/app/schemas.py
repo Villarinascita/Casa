@@ -1,4 +1,5 @@
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, computed_field, field_validator, model_validator
@@ -35,22 +36,27 @@ class LoginIn(Schema):
     password: Annotated[str, StringConstraints(min_length=1, max_length=256)]
 
 
+DEFAULT_BILL_CATEGORIES = ["Bollette", "Auto e assicurazione", "Altro"]
+
+
 class HouseholdOut(OutSchema):
     id: str
     name: str
     timezone: str
     version: int
     areas: list[str]
+    bill_categories: list[str] = Field(default_factory=lambda: DEFAULT_BILL_CATEGORIES)
 
 
 class HouseholdPatch(Schema):
     name: Text(120) | None = None
     areas: list[Text(60)] | None = Field(default=None, max_length=30)
+    bill_categories: list[Text(60)] | None = Field(default=None, max_length=30)
 
-    @field_validator("areas")
+    @field_validator("areas", "bill_categories")
     @classmethod
-    def _unique_areas(cls, areas):
-        return None if areas is None else list(dict.fromkeys(areas))
+    def _unique_list(cls, value):
+        return None if value is None else list(dict.fromkeys(value))
 
 
 class MeOut(BaseModel):
@@ -223,6 +229,40 @@ class ShoppingOut(EntityOut):
     @property
     def checked(self) -> bool:
         return self.checked_at is not None
+
+
+# --- Bollette e costi di casa ----------------------------------------------------------------
+
+
+class BillIn(Schema):
+    category: Text(60)
+    title: Text(180)
+    supplier: OptText(180) = None
+    amount: Decimal | None = Field(default=None, ge=0, max_digits=10, decimal_places=2)
+    due_date: date | None = None
+
+    _blank = field_validator("supplier", mode="before")(_blank_to_none)
+
+
+class BillPatch(Schema):
+    category: Text(60) | None = None
+    title: Text(180) | None = None
+    supplier: OptText(180) = None
+    amount: Decimal | None = Field(default=None, ge=0, max_digits=10, decimal_places=2)
+    due_date: date | None = None
+    payment_state: Literal["da_pagare", "addebito_previsto", "pagato"] | None = None
+
+
+class BillOut(EntityOut):
+    category: str
+    title: str
+    supplier: str | None
+    amount: Decimal | None
+    currency: str
+    due_date: date | None
+    payment_state: str
+    source_sender: str | None
+    source_subject: str | None
 
 
 # --- Importazione dal prototipo locale -------------------------------------------------------
