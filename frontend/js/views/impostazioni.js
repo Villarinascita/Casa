@@ -49,6 +49,18 @@ export function render() {
     </section>
 
     <section class="module">
+      ${sectionHead('Categorie dei costi')}
+      <p>Usate per smistare le bollette trovate nelle email. "Bollette", "Auto e assicurazione" e "Altro" ci sono già.</p>
+      <form id="bill-categories">
+        <div class="checks">${(state.household?.bill_categories || []).map((c) => html`<label class="setting-check"><input type="checkbox" name="category" value="${c}" checked>${c}</label>`)}</div>
+        <div class="quick-add">
+          <label class="grow"><span>Aggiungi una categoria</span><input name="custom" maxlength="60" placeholder="Es. Salute, Abbonamenti"></label>
+          <button type="submit" class="primary">Salva le categorie</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="module">
       ${sectionHead('I vostri dati')}
       <p>Esporta una copia di tutto ciò che è salvato, oppure importa i dati della prima versione dell'app (file JSON esportato in precedenza).</p>
       <div class="button-row">
@@ -167,6 +179,18 @@ export function mount(root) {
     try {
       await updateHousehold({ areas });
       toast('Aree salvate.');
+    } catch (err) { toast(err.message); }
+  });
+
+  $('#bill-categories', root).addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const bill_categories = $$('[name=category]:checked', form).map((i) => i.value);
+    const custom = form.elements.custom.value.trim();
+    if (custom) bill_categories.push(custom);
+    try {
+      await updateHousehold({ bill_categories });
+      toast('Categorie salvate.');
     } catch (err) { toast(err.message); }
   });
 
