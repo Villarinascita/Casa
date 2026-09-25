@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
@@ -13,6 +14,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
     TypeDecorator,
@@ -169,6 +171,31 @@ class Task(HouseholdEntity, Base):
     )
 
 
+class Bill(HouseholdEntity, Base):
+    """Bolletta o costo di casa: creata subito dall'estrazione email, mai marcata pagata
+    in automatico. Vedi docs/superpowers/specs/2026-09-25-bollette-costi-casa-design.md."""
+
+    __tablename__ = "bills"
+
+    category: Mapped[str] = mapped_column(String(60))
+    title: Mapped[str] = mapped_column(String(180))
+    supplier: Mapped[str | None] = mapped_column(String(180))
+    amount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    currency: Mapped[str] = mapped_column(String(3), default="EUR")
+    due_date: Mapped[date | None] = mapped_column(Date)
+    payment_state: Mapped[str] = mapped_column(String(20), default="da_pagare")
+    source_sender: Mapped[str | None] = mapped_column(String(320))
+    source_subject: Mapped[str | None] = mapped_column(String(500))
+    found_reminder_sent_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    due_reminder_sent_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+    __table_args__ = (
+        CheckConstraint("payment_state IN ('da_pagare', 'addebito_previsto', 'pagato')",
+                        name="ck_bills_payment_state"),
+        Index("ix_bills_household_payment_due", "household_id", "payment_state", "due_date"),
+    )
+
+
 class ReminderDelivery(Base):
     __tablename__ = "reminder_deliveries"
 
@@ -305,6 +332,26 @@ class Proposal(HouseholdEntity, Base):
     target_id: Mapped[str | None] = mapped_column(String(36))
 
     __table_args__ = (UniqueConstraint("connection_id", "message_id", "item_index", name="uq_proposal_email_item"),)
+
+
+class EmailCreationNotice(Base):
+    """Coda della notifica di controllo inviata dopo aver creato direttamente un
+    appuntamento o un'attività da un'email (mai prima che il salvataggio sia confermato)."""
+
+    __tablename__ = "email_creation_notices"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id"), index=True)
+    entity_type: Mapped[str] = mapped_column(String(10))
+    entity_id: Mapped[str] = mapped_column(String(36))
+    summary: Mapped[str] = mapped_column(String(500))
+    recipient_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    sent_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+    __table_args__ = (
+        CheckConstraint("entity_type IN ('event', 'task')", name="ck_email_creation_notices_entity_type"),
+    )
 
 
 class CalendarEventLink(Base):

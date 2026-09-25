@@ -156,3 +156,16 @@ def test_import_prototipo(luca):
     assert event["member_id"] == members["Mamma Rossi"] and event["location"] == "piscina comunale"
     assert luca.get("/api/v1/tasks").json()[0]["status"] == "done"
     assert "Documenti" in luca.get("/api/v1/household").json()["areas"]
+
+
+from app.models import Bill
+
+
+def test_bill_default_state_and_constraint(luca, db_factory, seed):
+    with db_factory() as db:
+        bill = Bill(household_id=seed["Rossi"], created_by=None, category="Bollette",
+                    title="Bolletta luce", amount=None)
+        db.add(bill)
+        db.commit()
+        assert bill.payment_state == "da_pagare"
+        assert bill.currency == "EUR"
