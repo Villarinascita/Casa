@@ -34,7 +34,7 @@ def test_google_worker_runs_gmail_calendar_and_outbound_then_waits_ten_minutes(d
 
     calls = []
 
-    def fake_gmail(db, connection, service, analyze, now):
+    def fake_gmail(db, connection, service, analyze, timezone_name, now):
         calls.append("gmail")
         connection.last_gmail_sync_at = now
         db.commit()
@@ -72,7 +72,7 @@ def test_google_worker_syncs_calendar_even_if_gmail_fails(db_factory, seed, monk
 
     calls = []
 
-    def failing_gmail(db, connection, service, analyze, now):
+    def failing_gmail(db, connection, service, analyze, timezone_name, now):
         raise RuntimeError("Hermes non configurato")
 
     def fake_calendar(db, connection, calendar, service, now):

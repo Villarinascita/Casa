@@ -8,14 +8,17 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .bills import dispatch_bill_reminders
 from .calendar_sync import push_local_event, sync_calendar
 from .config import settings
 from .db import SessionLocal
+from .email_notices import dispatch_email_creation_notices
 from .gmail_sync import sync_gmail
 from .google import GoogleService
 from .hermes_client import HermesClient
 from .models import Event, GoogleCalendar, GoogleConnection, Household, WorkerCursor
 from .reminders import dispatch_pending, enqueue_due
+from .schemas import DEFAULT_BILL_CATEGORIES
 from .telegram import process_update
 
 logger = logging.getLogger(__name__)
@@ -28,9 +31,13 @@ def run_google_once(db: Session, service: GoogleService, hermes_email: HermesCli
         gmail_error = None
         try:
             if connection.last_gmail_sync_at is None or (now - connection.last_gmail_sync_at).total_seconds() >= 600:
-                timezone_name = db.get(Household, connection.household_id).timezone
+                household = db.get(Household, connection.household_id)
+                timezone_name = household.timezone
+                categories = list((household.settings or {}).get("bill_categories", DEFAULT_BILL_CATEGORIES))
                 sync_gmail(db, connection, service,
-                           lambda text: hermes_email.analyze_email(text, timezone_name, settings.hermes_email_model), now)
+                           lambda text: hermes_email.analyze_email(
+                               text, timezone_name, settings.hermes_email_model, categories),
+                           timezone_name, now)
         except Exception as exc:
             db.rollback()
             connection = db.get(GoogleConnection, connection.id)
@@ -146,6 +153,8 @@ def main() -> None:
                 run_once(db, messenger, interpret, datetime.now(timezone.utc))
                 if google:
                     run_google_once(db, google, hermes_email, datetime.now(timezone.utc))
+                    dispatch_bill_reminders(db, messenger.send, datetime.now(timezone.utc))
+                    dispatch_email_creation_notices(db, messenger.send, datetime.now(timezone.utc))
         except Exception:
             logger.exception("Ciclo del worker fallito; nuovo tentativo tra 15 secondi")
             time.sleep(15)
