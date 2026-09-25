@@ -30,6 +30,16 @@ services:
     depends_on:
       api:
         condition: service_healthy
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: CLOUDFLARE-PERSONALE-INSIEME
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      api:
+        condition: service_healthy
 networks:
   default:
     name: NET.PERSONALE
