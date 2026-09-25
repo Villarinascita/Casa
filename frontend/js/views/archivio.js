@@ -13,11 +13,9 @@ function amountLabel(bill) {
 function billRow(bill) {
   return html`<div class="item ${bill.payment_state === 'pagato' ? 'done' : ''}" data-bill="${bill.id}">
     <span class="time-pill">${amountLabel(bill)}</span>
-    <button type="button" class="item-open" data-action="edit-bill">
-      <span class="item-title">${bill.title}</span>
-      <span class="meta">${[bill.supplier, bill.due_date ? `Scade ${formatDay(bill.due_date)}` : null,
-        STATE_LABELS[bill.payment_state]].filter(Boolean).join(' · ')}</span>
-    </button>
+    <span class="item-title">${bill.title}</span>
+    <span class="meta">${[bill.supplier, bill.due_date ? `Scade ${formatDay(bill.due_date)}` : null,
+      STATE_LABELS[bill.payment_state]].filter(Boolean).join(' · ')}</span>
     <button type="button" data-action="cycle-state" aria-label="Cambia stato">${STATE_LABELS[bill.payment_state]} →</button>
     <button type="button" class="delete" data-action="delete-bill" aria-label="Elimina ${bill.title}">Elimina</button>
   </div>`;
