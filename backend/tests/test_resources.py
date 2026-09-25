@@ -179,3 +179,24 @@ def test_bill_default_state_and_constraint(luca, db_factory, seed):
 def test_bill_schema_rejects_negative_amount():
     with pytest.raises(Exception):
         BillIn(category="Bollette", title="x", amount=-1)
+
+
+def test_bollette_crud_e_stato_pagamento(luca):
+    bill = create(luca, "bills", {"category": "Bollette", "title": "Luce", "amount": "45.50",
+                                  "due_date": "2026-10-10"})
+    assert bill["payment_state"] == "da_pagare"
+    assert bill["currency"] == "EUR"
+    paid = patch(luca, "bills", bill, {"payment_state": "pagato"}).json()
+    assert paid["payment_state"] == "pagato"
+    assert len(luca.get("/api/v1/bills").json()) == 1
+    deleted = luca.delete(f"/api/v1/bills/{bill['id']}", headers={"If-Match": str(paid["version"])})
+    assert deleted.status_code == 200
+    assert luca.get("/api/v1/bills").json() == []
+
+
+def test_bill_categories_famiglia(luca):
+    household = luca.get("/api/v1/household").json()
+    assert household["bill_categories"] == ["Bollette", "Auto e assicurazione", "Altro"]
+    updated = luca.patch("/api/v1/household", json={"bill_categories": ["Bollette", "Salute", "Bollette"]},
+                         headers={"If-Match": str(household["version"])}).json()
+    assert updated["bill_categories"] == ["Bollette", "Salute"]

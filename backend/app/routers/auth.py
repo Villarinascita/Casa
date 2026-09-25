@@ -6,7 +6,7 @@ from ..crud import check_version, commit
 from ..db import get_db
 from ..errors import ApiError
 from ..models import Household, HouseholdUser, User
-from ..schemas import HouseholdOut, HouseholdPatch, LoginIn, MeOut
+from ..schemas import DEFAULT_BILL_CATEGORIES, HouseholdOut, HouseholdPatch, LoginIn, MeOut
 from ..security import (Ctx, current, end_session, hash_password, hasher, login_limiter, start_session,
                         verify_password)
 
@@ -14,8 +14,10 @@ router = APIRouter(tags=["auth"])
 
 
 def household_out(household: Household) -> HouseholdOut:
+    settings = household.settings or {}
     return HouseholdOut(id=household.id, name=household.name, timezone=household.timezone,
-                        version=household.version, areas=list((household.settings or {}).get("areas", [])))
+                        version=household.version, areas=list(settings.get("areas", [])),
+                        bill_categories=list(settings.get("bill_categories", DEFAULT_BILL_CATEGORIES)))
 
 
 def me_out(db: Session, ctx: Ctx) -> MeOut:
@@ -68,5 +70,7 @@ def update_household(data: HouseholdPatch, ctx: Ctx = Depends(current), db: Sess
         household.name = data.name
     if data.areas is not None:
         household.settings = {**(household.settings or {}), "areas": data.areas}
+    if data.bill_categories is not None:
+        household.settings = {**(household.settings or {}), "bill_categories": data.bill_categories}
     commit(db)
     return household_out(household)

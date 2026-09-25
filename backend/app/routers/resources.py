@@ -8,9 +8,9 @@ from sqlalchemy.orm import Session
 from ..crud import Resource, audit, build_router, commit
 from ..db import get_db
 from ..errors import ApiError
-from ..models import Event, Household, Member, ShoppingItem, Task, utcnow
-from ..schemas import (EventIn, EventOut, EventPatch, MemberIn, MemberOut, MemberPatch, ShoppingIn, ShoppingOut,
-                       ShoppingPatch, TaskIn, TaskOut, TaskPatch)
+from ..models import Bill, Event, Household, Member, ShoppingItem, Task, utcnow
+from ..schemas import (BillIn, BillOut, BillPatch, EventIn, EventOut, EventPatch, MemberIn, MemberOut, MemberPatch,
+                       ShoppingIn, ShoppingOut, ShoppingPatch, TaskIn, TaskOut, TaskPatch)
 from ..security import Ctx, current
 
 
@@ -40,6 +40,14 @@ def _shopping_extras(obj: ShoppingItem, extras: dict, ctx: Ctx) -> dict:
     return {"checked": checked}
 
 
+def _bill_extras(obj: Bill, extras: dict, ctx: Ctx) -> dict:
+    state = extras.get("payment_state")
+    if state is None or state == obj.payment_state:
+        return {}
+    obj.payment_state = state
+    return {"payment_state": state}
+
+
 members = build_router("/members", Resource(
     Member, MemberIn, MemberPatch, MemberOut, extra_fields=("archived",), apply_extras=_member_extras,
     order_by=(Member.sort_order,), references_member=False))
@@ -50,6 +58,10 @@ tasks = build_router("/tasks", Resource(
 shopping = build_router("/shopping/items", Resource(
     ShoppingItem, ShoppingIn, ShoppingPatch, ShoppingOut, extra_fields=("checked",),
     apply_extras=_shopping_extras, references_member=False))
+
+bills = build_router("/bills", Resource(
+    Bill, BillIn, BillPatch, BillOut, extra_fields=("payment_state",), apply_extras=_bill_extras,
+    order_by=(Bill.due_date,), references_member=False))
 
 events = build_router("/events", Resource(Event, EventIn, EventPatch, EventOut), custom_list=True)
 
@@ -91,4 +103,4 @@ def clear_checked(ctx: Ctx = Depends(current), db: Session = Depends(get_db)):
     return items
 
 
-routers: list[APIRouter] = [members, events, tasks, shopping]
+routers: list[APIRouter] = [members, events, tasks, shopping, bills]

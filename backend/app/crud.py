@@ -3,6 +3,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, Request
@@ -49,6 +50,8 @@ def ensure_member(db: Session, ctx: Ctx, member_id: str | None) -> None:
 
 
 def _jsonable(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return str(value)
     return value.isoformat() if isinstance(value, (date, datetime)) else value
 
 
