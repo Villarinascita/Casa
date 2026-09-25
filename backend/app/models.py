@@ -64,11 +64,6 @@ class Household(Base):
 
     __mapper_args__ = {"version_id_col": version}
 
-    @property
-    def bill_categories(self) -> list[str]:
-        """Legge le categorie di bollette da settings con valore predefinito."""
-        return list(self.settings.get("bill_categories", ["Bollette", "Auto e assicurazione", "Altro"]))
-
 
 class User(Base):
     __tablename__ = "users"

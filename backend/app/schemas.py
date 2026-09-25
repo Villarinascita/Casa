@@ -45,7 +45,7 @@ class HouseholdOut(OutSchema):
     timezone: str
     version: int
     areas: list[str]
-    bill_categories: list[str] = Field(default_factory=lambda: DEFAULT_BILL_CATEGORIES)
+    bill_categories: list[str]
 
 
 class HouseholdPatch(Schema):
