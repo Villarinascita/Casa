@@ -87,6 +87,10 @@ def ingest_message(db: Session, connection: GoogleConnection, message: dict,
                                     thread_id=message.get("threadId", ""), item_index=proposal_index,
                                     sender=sender, subject=subject, snippet=snippet,
                                     kind=action.kind, data=data))
+                    # Come per l'altro ramo: forza subito il flush, così un vincolo di
+                    # unicità violato emerge qui (già protetto dall'except sotto) invece
+                    # che al commit finale fuori da questo blocco.
+                    db.flush()
                     proposal_index += 1
                 else:
                     data = validated.model_dump()
@@ -124,7 +128,16 @@ def ingest_message(db: Session, connection: GoogleConnection, message: dict,
         created_count = 0
         notices = []
     db.add(EmailProcessed(connection_id=connection.id, message_id=message_id))
-    db.commit()
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        # Difesa in profondità: un errore imprevisto anche qui (non solo nel blocco
+        # sopra) non deve far ritentare questo messaggio all'infinito a ogni giro.
+        db.rollback()
+        created_count = 0
+        notices = []
+        db.add(EmailProcessed(connection_id=connection.id, message_id=message_id))
+        db.commit()
     for entity_type, entity_id, summary in notices:
         db.add(EmailCreationNotice(household_id=connection.household_id, entity_type=entity_type,
                                    entity_id=entity_id, recipient_user_id=connection.user_id, summary=summary))

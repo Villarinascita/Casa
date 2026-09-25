@@ -300,3 +300,35 @@ def test_gmail_past_dated_event_creates_no_notice_but_still_creates_event(db_fac
         event = db.scalar(select(Event))
         assert event is not None and event.title == "Vecchia riunione"
         assert db.scalar(select(EmailCreationNotice)) is None
+
+
+def test_gmail_duplicate_proposal_does_not_stall_ingestion(db_factory, seed):
+    """Una Proposal duplicata (stesso connection_id/message_id/item_index, es. da una
+    ri-scansione dopo aver azzerato email_processed) non deve bloccare per sempre il
+    messaggio: l'errore di vincolo di unicità va gestito, il messaggio segnato processato."""
+    with db_factory() as db:
+        user = db.scalar(select(User).where(User.login == "luca"))
+        connection = GoogleConnection(household_id=seed["Rossi"], user_id=user.id,
+                                      email="luca@gmail.com", refresh_token_encrypted="encrypted")
+        db.add(connection)
+        db.flush()
+        # Una Proposal già esistente per lo stesso messaggio/indice, come capiterebbe
+        # ri-scansionando un'email già proposta in passato.
+        db.add(Proposal(household_id=seed["Rossi"], created_by=user.id, connection_id=connection.id,
+                        message_id="mail-dup", thread_id="t", item_index=0,
+                        kind="shopping", data={"label": "Latte"}))
+        db.commit()
+
+        message = {"id": "mail-dup", "threadId": "t", "snippet": "Prendi il latte",
+                   "payload": {"headers": [], "body": {"data": base64.urlsafe_b64encode(b"Latte").decode()}}}
+
+        def analyze(text):
+            return {"actions": [{"kind": "shopping", "data": {"label": "Latte"}}], "bills": []}
+
+        assert ingest_message(db, connection, message, analyze, "Europe/Rome") == 0
+        assert db.scalar(select(EmailProcessed).where(EmailProcessed.message_id == "mail-dup")) is not None
+        # Al giro successivo non lo ritenta.
+        calls = []
+        assert ingest_message(db, connection, message,
+                              lambda text: calls.append(text) or {"actions": []}, "Europe/Rome") == 0
+        assert calls == []
