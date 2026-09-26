@@ -61,6 +61,19 @@ export function render() {
     </section>
 
     <section class="module">
+      ${sectionHead('Email da ignorare')}
+      <p>Le email da questi domini finiscono nel cestino di Gmail (recuperabili per 30 giorni) senza essere analizzate. Aggiungendo un dominio si spostano nel cestino anche quelle già in casella.</p>
+      <form id="blocked-domains">
+        <div class="checks">${(state.household?.blocked_email_domains || []).map((d) => html`<label class="setting-check"><input type="checkbox" name="domain" value="${d}" checked>${d}</label>`)}</div>
+        <div class="quick-add">
+          <label class="grow"><span>Aggiungi un dominio</span><input name="custom" maxlength="253" placeholder="Es. newsletter.com"></label>
+          <button type="submit" class="primary">Salva i domini</button>
+        </div>
+      </form>
+      <div id="email-cleanups" aria-live="polite"></div>
+    </section>
+
+    <section class="module">
       ${sectionHead('I vostri dati')}
       <p>Esporta una copia di tutto ciò che è salvato, oppure importa i dati della prima versione dell'app (file JSON esportato in precedenza).</p>
       <div class="button-row">
@@ -118,6 +131,7 @@ export function mount(root) {
   loadGoogle(root).catch((err) => { $('#google-settings', root).textContent = err.message; });
   loadProposals(root).catch((err) => { $('#email-proposals', root).textContent = err.message; });
   loadConflicts(root).catch((err) => { $('#calendar-conflicts', root).textContent = err.message; });
+  loadCleanups(root).catch((err) => { $('#email-cleanups', root).textContent = err.message; });
   api('GET', '/connections/telegram').then(({ connected }) => {
     $('#telegram-status', root).textContent = connected ? 'Account collegato.' : 'Account non ancora collegato.';
     $('#telegram-disconnect', root).hidden = !connected;
@@ -194,6 +208,18 @@ export function mount(root) {
     } catch (err) { toast(err.message); }
   });
 
+  $('#blocked-domains', root).addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const blocked_email_domains = $$('[name=domain]:checked', form).map((i) => i.value);
+    const custom = form.elements.custom.value.trim();
+    if (custom) blocked_email_domains.push(custom);
+    try {
+      await updateHousehold({ blocked_email_domains });
+      toast('Domini salvati.');
+    } catch (err) { toast(err.message); }
+  });
+
   $('#export', root).addEventListener('click', () => {
     const { household, members, events, tasks, shopping, bills } = state;
     const data = { exported_at: new Date().toISOString(), household, members, events, tasks, shopping, bills };
@@ -222,6 +248,15 @@ export function mount(root) {
   });
 
   $('#logout', root).addEventListener('click', logout);
+}
+
+const CLEANUP_LABELS = { running: 'in corso', done: 'completata' };
+
+async function loadCleanups(root) {
+  const box = $('#email-cleanups', root);
+  if (!box) return;
+  const cleanups = await api('GET', '/household/email-cleanups');
+  box.innerHTML = cleanups.length ? String(html`<ul>${cleanups.map((c) => html`<li>${c.domain}: pulizia ${CLEANUP_LABELS[c.status] || c.status}, ${c.trashed_count} email nel cestino</li>`)}</ul>`) : '';
 }
 
 async function loadGoogle(root) {
