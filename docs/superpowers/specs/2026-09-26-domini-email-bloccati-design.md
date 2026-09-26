@@ -54,6 +54,13 @@ minuscolo. Un dominio bloccato `d` corrisponde se il dominio del mittente è
 `d` oppure termina con `.d` (quindi `newsletter.com` blocca
 `offerte.newsletter.com` ma non `notnewsletter.com`).
 
+### 4.1 Indirizzi precisi (aggiunta del 26/09)
+
+Oltre ai domini, l'elenco accetta indirizzi completi (`promotion-it@amazon.it`):
+corrispondono solo a quell'indirizzo esatto, così si scarta la pubblicità
+tenendo ordini e ricevute dello stesso dominio. Stessa lista
+(`blocked_email_domains`), stessa pulizia retroattiva (`from:<indirizzo>`).
+
 ## 5. Email future
 
 In `gmail_sync.ingest_message`, subito dopo il controllo "già processata" e
@@ -106,7 +113,6 @@ per le categorie).
 
 ## 9. Fuori scopo
 
-- Blocco di singoli indirizzi (solo domini interi).
 - Cancellazione permanente.
 - Pulsante "blocca mittente" dentro l'app (non esiste una vista delle email).
 - Ripristino automatico dal cestino quando si sblocca un dominio.

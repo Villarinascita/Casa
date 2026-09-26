@@ -282,3 +282,14 @@ def test_un_progresso_azzera_i_giri_falliti(db_factory, seed):
         assert row.failed_runs == 1
         run_domain_cleanups(db, service, NOW)
         assert row.failed_runs == 0 and row.trashed_count == 1 and row.status == "running"
+
+
+def test_pulizia_di_un_indirizzo_preciso_lascia_gli_altri_dello_stesso_dominio(db_factory, seed):
+    with db_factory() as db:
+        _cleanup(db, seed, domain="promotion-it@amazon.it")
+        api = FakeApi([{"messages": [{"id": "m1"}, {"id": "m2"}]}, {"messages": []}],
+                      {"m1": "Amazon <promotion-it@amazon.it>", "m2": "order-update@amazon.it"})
+        service = FakeService(api)
+        assert run_domain_cleanups(db, service, NOW) == 1
+        assert api.list_params[0]["q"] == "in:inbox from:promotion-it@amazon.it"
+        assert api.trashed == ["m1"]

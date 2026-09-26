@@ -362,7 +362,7 @@ class EmailDomainCleanup(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     household_id: Mapped[str] = mapped_column(ForeignKey("households.id"), index=True)
     connection_id: Mapped[str] = mapped_column(ForeignKey("google_connections.id"), index=True)
-    domain: Mapped[str] = mapped_column(String(253))
+    domain: Mapped[str] = mapped_column(String(320))  # dominio o indirizzo preciso
     status: Mapped[str] = mapped_column(String(10), default="running")
     page_token: Mapped[str | None] = mapped_column(String(500))
     trashed_count: Mapped[int] = mapped_column(Integer, default=0)

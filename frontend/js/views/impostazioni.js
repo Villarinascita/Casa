@@ -62,12 +62,12 @@ export function render() {
 
     <section class="module">
       ${sectionHead('Email da ignorare')}
-      <p>Le email da questi domini finiscono nel cestino di Gmail (recuperabili per 30 giorni) senza essere analizzate. Aggiungendo un dominio si spostano nel cestino anche quelle già in casella.</p>
+      <p>Le email da questi mittenti finiscono nel cestino di Gmail (recuperabili per 30 giorni) senza essere analizzate. Puoi indicare un dominio intero (newsletter.com) o un indirizzo preciso (promo@amazon.it) per tenere le email utili dello stesso mittente. Aggiungendone uno si spostano nel cestino anche quelle già in casella.</p>
       <form id="blocked-domains">
         <div class="checks">${(state.household?.blocked_email_domains || []).map((d) => html`<label class="setting-check"><input type="checkbox" name="domain" value="${d}" checked>${d}</label>`)}</div>
         <div class="quick-add">
-          <label class="grow"><span>Aggiungi un dominio</span><input name="custom" maxlength="253" placeholder="Es. newsletter.com"></label>
-          <button type="submit" class="primary">Salva i domini</button>
+          <label class="grow"><span>Aggiungi un dominio o un indirizzo</span><input name="custom" maxlength="320" placeholder="Es. newsletter.com o promo@amazon.it"></label>
+          <button type="submit" class="primary">Salva</button>
         </div>
       </form>
       <div id="email-cleanups" aria-live="polite"></div>
@@ -216,7 +216,7 @@ export function mount(root) {
     if (custom) blocked_email_domains.push(custom);
     try {
       await updateHousehold({ blocked_email_domains });
-      toast('Domini salvati.');
+      toast('Mittenti da ignorare salvati.');
     } catch (err) { toast(err.message); }
   });
 

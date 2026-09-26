@@ -20,7 +20,7 @@ def upgrade() -> None:
         sa.Column("id", sa.String(36), primary_key=True),
         sa.Column("household_id", sa.String(36), sa.ForeignKey("households.id"), nullable=False),
         sa.Column("connection_id", sa.String(36), sa.ForeignKey("google_connections.id"), nullable=False),
-        sa.Column("domain", sa.String(253), nullable=False),
+        sa.Column("domain", sa.String(320), nullable=False),
         sa.Column("status", sa.String(10), nullable=False),
         sa.Column("page_token", sa.String(500)),
         sa.Column("trashed_count", sa.Integer(), nullable=False),

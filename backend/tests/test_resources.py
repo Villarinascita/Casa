@@ -206,15 +206,16 @@ def test_domini_bloccati_normalizzati(luca):
     household = luca.get("/api/v1/household").json()
     assert household["blocked_email_domains"] == []
     updated = luca.patch("/api/v1/household",
-                         json={"blocked_email_domains": [" Newsletter.COM ", "newsletter.com"]},
+                         json={"blocked_email_domains": [" Newsletter.COM ", "newsletter.com",
+                                                         "Promotion-IT@Amazon.it"]},
                          headers={"If-Match": str(household["version"])})
     assert updated.status_code == 200, updated.text
-    assert updated.json()["blocked_email_domains"] == ["newsletter.com"]
+    assert updated.json()["blocked_email_domains"] == ["newsletter.com", "promotion-it@amazon.it"]
 
 
 def test_domini_bloccati_rifiuta_valori_non_validi(luca):
     household = luca.get("/api/v1/household").json()
-    for bad in ["tizio@gmail.com", "localhost", "news letter.com"]:
+    for bad in ["@gmail.com", "tizio@localhost", "localhost", "news letter.com"]:
         response = luca.patch("/api/v1/household", json={"blocked_email_domains": [bad]},
                               headers={"If-Match": str(household["version"])})
         assert response.status_code == 422, bad

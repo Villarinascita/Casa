@@ -4,7 +4,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, computed_field, field_validator, model_validator
 
-from .email_domains import normalize_domain
+from .email_domains import normalize_blocked_sender
 
 Text = lambda n: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=n)]  # noqa: E731
 OptText = lambda n: Annotated[str | None, StringConstraints(strip_whitespace=True, max_length=n)]  # noqa: E731
@@ -65,7 +65,7 @@ class HouseholdPatch(Schema):
     @field_validator("blocked_email_domains")
     @classmethod
     def _valid_domains(cls, value):
-        return None if value is None else list(dict.fromkeys(normalize_domain(item) for item in value))
+        return None if value is None else list(dict.fromkeys(normalize_blocked_sender(item) for item in value))
 
 
 class MeOut(BaseModel):
