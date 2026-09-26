@@ -1073,7 +1073,7 @@ git commit -m "Impostazioni: sezione Email da ignorare con stato della pulizia"
 
 - [ ] **Step 1: Google Cloud Console**: nella schermata di consenso OAuth (Accesso ai dati) aggiungere lo scope `https://www.googleapis.com/auth/gmail.modify` (l'app resta in modalità test, Luca è già utente di test).
 - [ ] **Step 2: Deploy**: pacchetto, upload, `compose build api`, `compose -f compose.yaml -f compose.hermes.yaml --profile integrations up -d`; verificare `alembic current` = `20260926_01 (head)` e health 200.
-- [ ] **Step 3: Luca ricollega Google** da Impostazioni (Scollega → Collega Google) concedendo il nuovo permesso.
+- [ ] **Step 3:** Luca usa "Ricollega Google (aggiorna i permessi)" in Impostazioni — NON Scollega; e ricollegare PRIMA di bloccare domini.
 - [ ] **Step 4: Verifica**: `GET /household` contiene `blocked_email_domains`; aggiungere un dominio di prova indicato da Luca e controllare che `GET /household/email-cleanups` mostri la pulizia avanzare e che `last_error` non contenga l'avviso di permesso.
 
 ---

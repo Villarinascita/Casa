@@ -3,7 +3,7 @@ from urllib.parse import parse_qs, urlparse
 from sqlalchemy import select
 
 from app.google import GoogleService
-from app.models import CalendarEventLink, EmailProcessed, Event, GoogleCalendar, GoogleConnection, GoogleOAuthState, Proposal, User
+from app.models import CalendarEventLink, EmailDomainCleanup, EmailProcessed, Event, GoogleCalendar, GoogleConnection, GoogleOAuthState, Household, Proposal, User
 from app.main import app
 from app.routers.google_connections import get_service
 from app.security import Ctx
@@ -30,6 +30,31 @@ def test_google_oauth_state_binds_account_and_encrypts_refresh_token(db_factory,
         assert connection.refresh_token_encrypted != "secret-refresh"
         assert service.refresh_token(connection) == "secret-refresh"
         assert db.scalar(select(GoogleOAuthState)) is None
+
+
+def test_una_nuova_connessione_avvia_la_pulizia_dei_domini_gia_bloccati(db_factory, seed):
+    class FakeApi:
+        def exchange_code(self, code, redirect_uri):
+            return {"access_token": "access", "refresh_token": "secret-refresh"}
+
+        def profile(self, access_token):
+            return {"emailAddress": "luca@gmail.com"}
+
+    key = "wVAlSzz5RaOEhYrG_tn3M_UFGxE8DnfNBUoUxgS2k2M="
+    service = GoogleService("client", "secret", "https://insieme.example/api/v1/connections/google/callback", key,
+                            FakeApi())
+    with db_factory() as db:
+        household = db.get(Household, seed["Rossi"])
+        household.settings = {**(household.settings or {}), "blocked_email_domains": ["news.com", "spam.it"]}
+        db.commit()
+        ctx = Ctx(db.scalar(select(User).where(User.login == "luca")).id, "luca", seed["Rossi"], "admin")
+        url = service.start(db, ctx)
+        state = parse_qs(urlparse(url).query)["state"][0]
+        connection = service.finish(db, state, "google-code")
+        cleanups = db.scalars(select(EmailDomainCleanup).where(
+            EmailDomainCleanup.connection_id == connection.id)).all()
+        assert {c.domain for c in cleanups} == {"news.com", "spam.it"}
+        assert all(c.status == "running" for c in cleanups)
 
 
 def test_calendar_selection_rejects_busy_as_outbound_default(luca, db_factory, seed):
@@ -110,6 +135,22 @@ def test_disconnect_removes_google_records_without_deleting_local_event(luca, db
         assert db.scalar(select(EmailProcessed)) is None
         assert db.scalar(select(Proposal)) is None
         assert db.scalar(select(Event)).title == "Visita"
+
+
+def test_disconnect_rimuove_anche_le_pulizie_dei_domini_bloccati(luca, db_factory, seed):
+    with db_factory() as db:
+        user = db.scalar(select(User).where(User.login == "luca"))
+        connection = GoogleConnection(household_id=seed["Rossi"], user_id=user.id,
+                                      email="luca@gmail.com", refresh_token_encrypted="encrypted")
+        db.add(connection)
+        db.flush()
+        db.add(EmailDomainCleanup(household_id=seed["Rossi"], connection_id=connection.id, domain="news.com"))
+        db.commit()
+    response = luca.delete("/api/v1/connections/google")
+    assert response.status_code == 204, response.text
+    with db_factory() as db:
+        assert db.scalar(select(GoogleConnection)) is None
+        assert db.scalar(select(EmailDomainCleanup)) is None
 
 
 def test_scope_gmail_consente_il_cestino_ma_non_la_sola_lettura():

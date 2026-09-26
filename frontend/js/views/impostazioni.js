@@ -293,6 +293,7 @@ async function loadGoogle(root) {
           ${['owner', 'writer'].includes(calendar.access_role) ? '' : 'disabled'}> Calendario per nuovi appuntamenti</label>
       </div>`)}
       <button type="submit">Salva calendari</button></form>
+    <button type="button" id="google-reconnect">Ricollega Google (aggiorna i permessi)</button>
     <button type="button" id="google-disconnect">Scollega Google</button>`);
   $('#gmail-filter', box).addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -314,6 +315,12 @@ async function loadGoogle(root) {
       await api('PUT', '/connections/google/calendars', { body: selections });
       toast('Calendari salvati.');
       await loadGoogle(root);
+    } catch (err) { toast(err.message); }
+  });
+  $('#google-reconnect', box).addEventListener('click', async () => {
+    try {
+      const { authorization_url: url } = await api('POST', '/connections/google/start');
+      location.assign(url);
     } catch (err) { toast(err.message); }
   });
   $('#google-disconnect', box).addEventListener('click', async () => {

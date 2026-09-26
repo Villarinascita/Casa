@@ -12,7 +12,7 @@ from ..config import settings
 from ..db import get_db
 from ..errors import ApiError
 from ..google import GoogleService
-from ..models import CalendarEventLink, EmailProcessed, GoogleCalendar, GoogleConnection, Proposal
+from ..models import CalendarEventLink, EmailDomainCleanup, EmailProcessed, GoogleCalendar, GoogleConnection, Proposal
 from ..security import Ctx, current
 
 router = APIRouter(prefix="/connections/google", tags=["connections"])
@@ -139,5 +139,6 @@ def disconnect(ctx: Ctx = Depends(current), db: Session = Depends(get_db)):
     db.execute(delete(GoogleCalendar).where(GoogleCalendar.connection_id == row.id))
     db.execute(delete(Proposal).where(Proposal.connection_id == row.id))
     db.execute(delete(EmailProcessed).where(EmailProcessed.connection_id == row.id))
+    db.execute(delete(EmailDomainCleanup).where(EmailDomainCleanup.connection_id == row.id))
     db.delete(row)
     db.commit()

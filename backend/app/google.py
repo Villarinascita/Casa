@@ -10,7 +10,7 @@ from cryptography.fernet import Fernet
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import GoogleConnection, GoogleOAuthState, utcnow
+from .models import EmailDomainCleanup, GoogleConnection, GoogleOAuthState, Household, utcnow
 from .security import Ctx
 
 SCOPES = (
@@ -97,12 +97,19 @@ class GoogleService:
         tokens = self.api.exchange_code(code, self.redirect_uri)
         email = self.api.profile(tokens["access_token"])["emailAddress"]
         connection = db.scalar(select(GoogleConnection).where(GoogleConnection.user_id == row.user_id))
+        is_new_connection = connection is None
         if connection is None:
             if not tokens.get("refresh_token"):
                 raise ValueError("Google non ha restituito un token di accesso persistente")
             connection = GoogleConnection(user_id=row.user_id, household_id=row.household_id,
                                           email=email, refresh_token_encrypted="")
             db.add(connection)
+            db.flush()
+        if is_new_connection:
+            household = db.get(Household, row.household_id)
+            blocked_domains = (household.settings or {}).get("blocked_email_domains", []) if household else []
+            for domain in blocked_domains:
+                db.add(EmailDomainCleanup(household_id=row.household_id, connection_id=connection.id, domain=domain))
         if tokens.get("refresh_token"):
             connection.refresh_token_encrypted = self.fernet.encrypt(tokens["refresh_token"].encode()).decode()
         connection.email = email
