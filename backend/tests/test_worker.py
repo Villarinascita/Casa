@@ -34,7 +34,7 @@ def test_google_worker_runs_gmail_calendar_and_outbound_then_waits_ten_minutes(d
 
     calls = []
 
-    def fake_gmail(db, connection, service, analyze, timezone_name, now, blocked_domains=()):
+    def fake_gmail(db, connection, service, analyze, timezone_name, now, blocked_domains=(), **kwargs):
         calls.append("gmail")
         connection.last_gmail_sync_at = now
         db.commit()
@@ -72,7 +72,7 @@ def test_google_worker_syncs_calendar_even_if_gmail_fails(db_factory, seed, monk
 
     calls = []
 
-    def failing_gmail(db, connection, service, analyze, timezone_name, now, blocked_domains=()):
+    def failing_gmail(db, connection, service, analyze, timezone_name, now, blocked_domains=(), **kwargs):
         raise RuntimeError("Hermes non configurato")
 
     def fake_calendar(db, connection, calendar, service, now):
@@ -183,7 +183,7 @@ def test_google_worker_passa_i_domini_bloccati_e_conserva_l_avviso(db_factory, s
 
     seen = []
 
-    def fake_gmail(db, connection, service, analyze, timezone_name, now, blocked_domains=()):
+    def fake_gmail(db, connection, service, analyze, timezone_name, now, blocked_domains=(), **kwargs):
         seen.append(list(blocked_domains))
         connection.last_gmail_sync_at = now
         connection.last_error = "Ricollega Google"

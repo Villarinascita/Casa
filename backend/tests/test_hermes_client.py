@@ -41,6 +41,7 @@ def test_analyze_email_accepts_bills_and_requires_categories_in_prompt():
                                   ["Bollette", "Auto e assicurazione", "Altro"])
     assert result["bills"][0]["title"] == "Luce"
     assert "Bollette" in captured["body"] and "Auto e assicurazione" in captured["body"]
+    assert '\\"promo\\"' in captured["body"] and "nel dubbio false" in captured["body"]
 
 
 def test_analyze_email_rejects_non_list_bills():

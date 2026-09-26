@@ -49,6 +49,8 @@ class HouseholdOut(OutSchema):
     areas: list[str]
     bill_categories: list[str]
     blocked_email_domains: list[str]
+    auto_trash_promotions: bool
+    kept_email_senders: list[str]
 
 
 class HouseholdPatch(Schema):
@@ -56,13 +58,15 @@ class HouseholdPatch(Schema):
     areas: list[Text(60)] | None = Field(default=None, max_length=30)
     bill_categories: list[Text(60)] | None = Field(default=None, max_length=30)
     blocked_email_domains: list[str] | None = Field(default=None, max_length=100)
+    auto_trash_promotions: bool | None = None
+    kept_email_senders: list[str] | None = Field(default=None, max_length=100)
 
     @field_validator("areas", "bill_categories")
     @classmethod
     def _unique_list(cls, value):
         return None if value is None else list(dict.fromkeys(value))
 
-    @field_validator("blocked_email_domains")
+    @field_validator("blocked_email_domains", "kept_email_senders")
     @classmethod
     def _valid_domains(cls, value):
         return None if value is None else list(dict.fromkeys(normalize_blocked_sender(item) for item in value))
@@ -81,6 +85,12 @@ class EmailCleanupOut(OutSchema):
     trashed_count: int
     created_at: datetime
     completed_at: datetime | None
+
+
+class AutoTrashedOut(OutSchema):
+    sender: str
+    subject: str
+    trashed_at: datetime
 
 
 # --- Familiari -------------------------------------------------------------------------------

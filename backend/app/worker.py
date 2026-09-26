@@ -14,6 +14,7 @@ from .config import settings
 from .db import SessionLocal
 from .email_cleanup import run_domain_cleanups
 from .email_notices import dispatch_email_creation_notices
+from .email_promotions import dispatch_promo_summaries
 from .gmail_sync import sync_gmail
 from .google import GoogleService
 from .hermes_client import HermesClient
@@ -35,11 +36,14 @@ def run_google_once(db: Session, service: GoogleService, hermes_email: HermesCli
                 household = db.get(Household, connection.household_id)
                 timezone_name = household.timezone
                 categories = list((household.settings or {}).get("bill_categories", DEFAULT_BILL_CATEGORIES))
-                blocked = list((household.settings or {}).get("blocked_email_domains", []))
+                household_settings = household.settings or {}
+                blocked = list(household_settings.get("blocked_email_domains", []))
                 sync_gmail(db, connection, service,
                            lambda text: hermes_email.analyze_email(
                                text, timezone_name, settings.hermes_email_model, categories),
-                           timezone_name, now, blocked_domains=blocked)
+                           timezone_name, now, blocked_domains=blocked,
+                           auto_trash_promotions=bool(household_settings.get("auto_trash_promotions", True)),
+                           kept_senders=list(household_settings.get("kept_email_senders", [])))
         except Exception as exc:
             db.rollback()
             connection = db.get(GoogleConnection, connection.id)
@@ -159,6 +163,7 @@ def main() -> None:
                     run_google_once(db, google, hermes_email, datetime.now(timezone.utc))
                     dispatch_bill_reminders(db, messenger.send, datetime.now(timezone.utc))
                     dispatch_email_creation_notices(db, messenger.send, datetime.now(timezone.utc))
+                    dispatch_promo_summaries(db, messenger.send, datetime.now(timezone.utc))
                     try:
                         run_domain_cleanups(db, google, datetime.now(timezone.utc))
                     except Exception:

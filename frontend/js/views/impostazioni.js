@@ -71,6 +71,17 @@ export function render() {
         </div>
       </form>
       <div id="email-cleanups" aria-live="polite"></div>
+      <h3>Pubblicità</h3>
+      <p>Hermes riconosce le email pubblicitarie e le mette nel cestino da solo. Non tocca mai email con ordini, ricevute, bollette, appuntamenti o scadenze, né quelle speciali o importanti. Ogni settimana ricevi un riepilogo su Telegram.</p>
+      <label class="setting-check"><input type="checkbox" id="auto-trash" ${state.household?.auto_trash_promotions === false ? '' : 'checked'}>Metti nel cestino la pubblicità da sola</label>
+      <form id="kept-senders">
+        <div class="checks">${(state.household?.kept_email_senders || []).map((d) => html`<label class="setting-check"><input type="checkbox" name="kept" value="${d}" checked>${d}</label>`)}</div>
+        <div class="quick-add">
+          <label class="grow"><span>Mittenti da tenere sempre</span><input name="custom" maxlength="320" placeholder="Es. conad.com"></label>
+          <button type="submit" class="primary">Salva</button>
+        </div>
+      </form>
+      <div id="auto-trashed" aria-live="polite"></div>
     </section>
 
     <section class="module">
@@ -132,6 +143,7 @@ export function mount(root) {
   loadProposals(root).catch((err) => { $('#email-proposals', root).textContent = err.message; });
   loadConflicts(root).catch((err) => { $('#calendar-conflicts', root).textContent = err.message; });
   loadCleanups(root).catch((err) => { $('#email-cleanups', root).textContent = err.message; });
+  loadAutoTrashed(root).catch((err) => { $('#auto-trashed', root).textContent = err.message; });
   api('GET', '/connections/telegram').then(({ connected }) => {
     $('#telegram-status', root).textContent = connected ? 'Account collegato.' : 'Account non ancora collegato.';
     $('#telegram-disconnect', root).hidden = !connected;
@@ -220,6 +232,25 @@ export function mount(root) {
     } catch (err) { toast(err.message); }
   });
 
+  $('#auto-trash', root).addEventListener('change', async (e) => {
+    try {
+      await updateHousehold({ auto_trash_promotions: e.target.checked });
+      toast(e.target.checked ? 'La pubblicità andrà nel cestino da sola.' : 'Pulizia automatica della pubblicità spenta.');
+    } catch (err) { toast(err.message); }
+  });
+
+  $('#kept-senders', root).addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const kept_email_senders = $$('[name=kept]:checked', form).map((i) => i.value);
+    const custom = form.elements.custom.value.trim();
+    if (custom) kept_email_senders.push(custom);
+    try {
+      await updateHousehold({ kept_email_senders });
+      toast('Mittenti da tenere salvati.');
+    } catch (err) { toast(err.message); }
+  });
+
   $('#export', root).addEventListener('click', () => {
     const { household, members, events, tasks, shopping, bills } = state;
     const data = { exported_at: new Date().toISOString(), household, members, events, tasks, shopping, bills };
@@ -257,6 +288,22 @@ async function loadCleanups(root) {
   if (!box) return;
   const cleanups = await api('GET', '/household/email-cleanups');
   box.innerHTML = cleanups.length ? String(html`<ul>${cleanups.map((c) => html`<li>${c.domain}: pulizia ${CLEANUP_LABELS[c.status] || c.status}, ${c.trashed_count} email nel cestino</li>`)}</ul>`) : '';
+}
+
+async function loadAutoTrashed(root) {
+  const box = $('#auto-trashed', root);
+  if (!box) return;
+  const rows = await api('GET', '/household/auto-trashed');
+  if (!rows.length) { box.innerHTML = ''; return; }
+  const when = (iso) => new Date(iso).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
+  box.innerHTML = String(html`<p>Ultime email messe nel cestino da Hermes:</p><ul>${rows.map((r) => html`<li>${when(r.trashed_at)} · ${r.sender} · ${r.subject} <button type="button" data-keep="${r.sender.split('@').pop()}">Tieni questo mittente</button></li>`)}</ul>`);
+  $$('[data-keep]', box).forEach((button) => button.addEventListener('click', async () => {
+    const kept = state.household?.kept_email_senders || [];
+    try {
+      await updateHousehold({ kept_email_senders: [...new Set([...kept, button.dataset.keep])] });
+      toast(`Le email da ${button.dataset.keep} non andranno più nel cestino.`);
+    } catch (err) { toast(err.message); }
+  }));
 }
 
 async function loadGoogle(root) {

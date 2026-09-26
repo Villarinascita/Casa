@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .email_promotions import keep_command, keep_sender
 from .models import ChannelLink, HouseholdUser, TelegramLinkCode, TelegramPending, TelegramUpdate, User, utcnow
 from .routers.assistant import create_actions
 from .schemas import ActionBatchIn
@@ -66,6 +67,12 @@ def process_update(db: Session, update: dict[str, Any],
         if pending and pending.expires_at <= utcnow():
             db.delete(pending)
             pending = None
+        kept = keep_command(text)
+        if kept is not None:
+            reply = keep_sender(db, link.household_id, kept)
+            db.add(TelegramUpdate(update_id=update_id, response=reply))
+            db.commit()
+            return reply
         if text == "/cancel" and pending:
             db.delete(pending)
             reply = "Richiesta annullata."

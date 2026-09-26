@@ -13,8 +13,9 @@ from sqlalchemy.orm import Session
 
 from .email_cleanup import TRASH_PERMISSION_MESSAGE, TrashNotPermitted, trash_message
 from .email_domains import is_blocked_sender
+from .email_promotions import is_promotion_to_trash, trashed_sender
 from .hermes_client import HermesInvalidResponse
-from .models import Bill, EmailCreationNotice, EmailProcessed, Event, GoogleConnection, Proposal
+from .models import Bill, EmailAutoTrash, EmailCreationNotice, EmailProcessed, Event, GoogleConnection, Proposal
 from .routers.assistant import ACTION_TYPES
 from .schemas import ActionBatchIn, BillIn
 
@@ -58,7 +59,8 @@ def _is_stale(model, obj, now: datetime) -> bool:
 
 def ingest_message(db: Session, connection: GoogleConnection, message: dict,
                    analyze: Callable[[str], dict], timezone_name: str, now: datetime | None = None,
-                   blocked_domains: Sequence[str] = (), trash: Callable[[str], None] | None = None) -> int:
+                   blocked_domains: Sequence[str] = (), trash: Callable[[str], None] | None = None,
+                   auto_trash_promotions: bool = False, kept_senders: Sequence[str] = ()) -> int:
     now = now or datetime.now(timezone.utc)
     message_id = message["id"]
     seen = db.scalar(select(EmailProcessed).where(EmailProcessed.connection_id == connection.id,
@@ -83,8 +85,10 @@ def ingest_message(db: Session, connection: GoogleConnection, message: dict,
     body = _body_text(message.get("payload", {}))[:12000] or snippet
     created_count = 0
     notices: list[tuple[str, str, str]] = []
+    promo = False
     try:
         result = analyze(f"Da: {sender}\nOggetto: {subject}\nTesto: {body}")
+        promo = result.get("promo") is True
         actions = result.get("actions") or []
         bills = result.get("bills") or []
         batch = ActionBatchIn.model_validate({"actions": actions}) if actions else None
@@ -140,6 +144,7 @@ def ingest_message(db: Session, connection: GoogleConnection, message: dict,
         db.rollback()
         created_count = 0
         notices = []
+        promo = False
     db.add(EmailProcessed(connection_id=connection.id, message_id=message_id))
     try:
         db.commit()
@@ -151,6 +156,17 @@ def ingest_message(db: Session, connection: GoogleConnection, message: dict,
         notices = []
         db.add(EmailProcessed(connection_id=connection.id, message_id=message_id))
         db.commit()
+    if (auto_trash_promotions and trash is not None
+            and is_promotion_to_trash(message, headers, promo, created_count, kept_senders)):
+        try:
+            trash(message_id)
+        except TrashNotPermitted:
+            pass  # resta in casella; sync_gmail chiede di ricollegare Google
+        else:
+            db.add(EmailAutoTrash(household_id=connection.household_id, connection_id=connection.id,
+                                  recipient_user_id=connection.user_id, message_id=message_id,
+                                  sender=trashed_sender(headers.get("from", "")), subject=subject))
+            db.commit()
     for entity_type, entity_id, summary in notices:
         db.add(EmailCreationNotice(household_id=connection.household_id, entity_type=entity_type,
                                    entity_id=entity_id, recipient_user_id=connection.user_id, summary=summary))
@@ -161,7 +177,8 @@ def ingest_message(db: Session, connection: GoogleConnection, message: dict,
 
 def sync_gmail(db: Session, connection: GoogleConnection, service,
                analyze: Callable[[str], dict], timezone_name: str, now: datetime | None = None,
-               blocked_domains: Sequence[str] = ()) -> int:
+               blocked_domains: Sequence[str] = (), auto_trash_promotions: bool = False,
+               kept_senders: Sequence[str] = ()) -> int:
     """Scorre i messaggi che corrispondono ai filtri; riprende dalle pagine incomplete."""
     now = now or datetime.now(timezone.utc)
     since = connection.last_gmail_sync_at - timedelta(days=1) if connection.last_gmail_sync_at else now - timedelta(days=365)
@@ -187,7 +204,8 @@ def sync_gmail(db: Session, connection: GoogleConnection, service,
             f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{item['id']}", token,
             {"format": "full"})
         created += ingest_message(db, connection, message, analyze, timezone_name, now,
-                                  blocked_domains=blocked_domains, trash=trash)
+                                  blocked_domains=blocked_domains, trash=trash,
+                                  auto_trash_promotions=auto_trash_promotions, kept_senders=kept_senders)
     connection.gmail_page_token = page.get("nextPageToken")
     if not connection.gmail_page_token:
         connection.last_gmail_sync_at = now

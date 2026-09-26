@@ -373,6 +373,23 @@ class EmailDomainCleanup(Base):
     __table_args__ = (CheckConstraint("status IN ('running', 'done')", name="ck_email_domain_cleanups_status"),)
 
 
+class EmailAutoTrash(Base):
+    """Email pubblicitaria spostata nel cestino da sola: serve al riepilogo settimanale
+    su Telegram e all'elenco in Impostazioni."""
+
+    __tablename__ = "email_auto_trash"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id"), index=True)
+    connection_id: Mapped[str] = mapped_column(ForeignKey("google_connections.id"), index=True)
+    recipient_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    message_id: Mapped[str] = mapped_column(String(200))
+    sender: Mapped[str] = mapped_column(String(320))
+    subject: Mapped[str] = mapped_column(String(500), default="")
+    trashed_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    reported_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+
 class CalendarEventLink(Base):
     __tablename__ = "calendar_event_links"
 

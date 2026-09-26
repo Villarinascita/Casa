@@ -6,8 +6,8 @@ from ..crud import check_version, commit
 from ..db import get_db
 from ..errors import ApiError
 from ..email_cleanup import queue_domain_cleanups
-from ..models import EmailDomainCleanup, Household, HouseholdUser, User
-from ..schemas import DEFAULT_BILL_CATEGORIES, EmailCleanupOut, HouseholdOut, HouseholdPatch, LoginIn, MeOut
+from ..models import EmailAutoTrash, EmailDomainCleanup, Household, HouseholdUser, User
+from ..schemas import DEFAULT_BILL_CATEGORIES, AutoTrashedOut, EmailCleanupOut, HouseholdOut, HouseholdPatch, LoginIn, MeOut
 from ..security import (Ctx, current, end_session, hash_password, hasher, login_limiter, start_session,
                         verify_password)
 
@@ -19,7 +19,9 @@ def household_out(household: Household) -> HouseholdOut:
     return HouseholdOut(id=household.id, name=household.name, timezone=household.timezone,
                         version=household.version, areas=list(settings.get("areas", [])),
                         bill_categories=list(settings.get("bill_categories", DEFAULT_BILL_CATEGORIES)),
-                        blocked_email_domains=list(settings.get("blocked_email_domains", [])))
+                        blocked_email_domains=list(settings.get("blocked_email_domains", [])),
+                        auto_trash_promotions=bool(settings.get("auto_trash_promotions", True)),
+                        kept_email_senders=list(settings.get("kept_email_senders", [])))
 
 
 def me_out(db: Session, ctx: Ctx) -> MeOut:
@@ -78,6 +80,10 @@ def update_household(data: HouseholdPatch, ctx: Ctx = Depends(current), db: Sess
         previous = list((household.settings or {}).get("blocked_email_domains", []))
         household.settings = {**(household.settings or {}), "blocked_email_domains": data.blocked_email_domains}
         queue_domain_cleanups(db, household.id, previous, data.blocked_email_domains)
+    if data.auto_trash_promotions is not None:
+        household.settings = {**(household.settings or {}), "auto_trash_promotions": data.auto_trash_promotions}
+    if data.kept_email_senders is not None:
+        household.settings = {**(household.settings or {}), "kept_email_senders": data.kept_email_senders}
     commit(db)
     return household_out(household)
 
@@ -86,3 +92,9 @@ def update_household(data: HouseholdPatch, ctx: Ctx = Depends(current), db: Sess
 def list_email_cleanups(ctx: Ctx = Depends(current), db: Session = Depends(get_db)):
     return db.scalars(select(EmailDomainCleanup).where(EmailDomainCleanup.household_id == ctx.household_id)
                       .order_by(EmailDomainCleanup.created_at.desc())).all()
+
+
+@router.get("/household/auto-trashed", response_model=list[AutoTrashedOut])
+def list_auto_trashed(ctx: Ctx = Depends(current), db: Session = Depends(get_db)):
+    return db.scalars(select(EmailAutoTrash).where(EmailAutoTrash.household_id == ctx.household_id)
+                      .order_by(EmailAutoTrash.trashed_at.desc()).limit(50)).all()
