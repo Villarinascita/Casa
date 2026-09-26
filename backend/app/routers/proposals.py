@@ -35,6 +35,12 @@ class ReviewIn(BaseModel):
     decision: Literal["accept", "reject"]
 
 
+class RejectAllIn(BaseModel):
+    """Senza filtri: tutte le proposte in attesa. `sender_domain`: solo quelle di quel mittente."""
+    sender_domain: str | None = Field(default=None, max_length=253)
+    kind: Literal["shopping", "event", "task"] | None = None
+
+
 class RejectStaleIn(BaseModel):
     days: int = Field(default=30, ge=7)
 
@@ -53,7 +59,8 @@ def list_proposals(status: Literal["pending", "accepted", "rejected"] | None = N
     query = select(Proposal).where(Proposal.household_id == ctx.household_id, Proposal.deleted_at.is_(None))
     if status:
         query = query.where(Proposal.status == status)
-    return db.scalars(query.order_by(Proposal.created_at.desc()).limit(200)).all()
+    # Le proposte in attesa si mostrano tutte, così il numero nel menu corrisponde alla lista.
+    return db.scalars(query.order_by(Proposal.created_at.desc()).limit(2000 if status == "pending" else 200)).all()
 
 
 @router.get("/summary")
@@ -64,6 +71,23 @@ def summary(ctx: Ctx = Depends(current), db: Session = Depends(get_db)):
     stale = db.scalar(select(func.count()).select_from(Proposal).where(*_pending(ctx),
                                                                        Proposal.created_at < cutoff))
     return {"pending": pending, "stale": stale}
+
+
+@router.post("/reject-all")
+def reject_all(data: RejectAllIn, ctx: Ctx = Depends(current), db: Session = Depends(get_db)):
+    """Ignora in blocco: tutte, quelle di un mittente o di un tipo."""
+    query = select(Proposal).where(*_pending(ctx))
+    if data.kind:
+        query = query.where(Proposal.kind == data.kind)
+    rows = db.scalars(query).all()
+    if data.sender_domain:
+        domain = data.sender_domain.strip().lower()
+        rows = [p for p in rows if (p.sender or "").lower().rstrip("> ").endswith("@" + domain)]
+    for proposal in rows:
+        proposal.status = "rejected"
+        audit(db, ctx, "review", proposal, {"status": "rejected", "bulk": True})
+    commit(db)
+    return {"rejected": len(rows)}
 
 
 @router.post("/reject-stale")

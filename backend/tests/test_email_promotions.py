@@ -308,3 +308,18 @@ def test_prompt_esclude_eventi_aziendali_e_consegne():
     for phrase in ("NON sono appuntamenti", "webinar", "consegne o ritiri di pacchi", "lasciare recensioni",
                    "Nel dubbio non estrarre"):
         assert phrase in captured["body"], phrase
+
+
+def test_acquisti_e_posta_di_massa_non_finiscono_nella_spesa(db_factory, seed):
+    from app.models import Proposal
+    with db_factory() as db:
+        connection = _connection(db, seed)
+        purchase = {"actions": [{"kind": "shopping", "data": {"label": "Coltelli Victorinox"}}],
+                    "bills": [{"category": "Altro", "title": "Ordine Amazon", "amount": 32.95}]}
+        ingest_message(db, connection, _message("m1", unsubscribe=False), lambda t: purchase, "Europe/Rome", NOW)
+        ingest_message(db, connection, _message("m2"), lambda t: {"actions": [
+            {"kind": "shopping", "data": {"label": "Latte"}}]}, "Europe/Rome", NOW)
+        assert db.scalar(select(Proposal)) is None
+        ingest_message(db, connection, _message("m3", unsubscribe=False), lambda t: {"actions": [
+            {"kind": "shopping", "data": {"label": "Colla stick"}}]}, "Europe/Rome", NOW)
+        assert db.scalar(select(Proposal)).data["label"] == "Colla stick"

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, Header, Request, Response
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -54,6 +55,25 @@ def login(data: LoginIn, request: Request, response: Response, db: Session = Dep
 @router.post("/auth/logout", status_code=204)
 def logout(request: Request, response: Response, db: Session = Depends(get_db)):
     end_session(db, request, response)
+    db.commit()
+
+
+class PasswordIn(BaseModel):
+    current: str = Field(max_length=200)
+    new: str = Field(min_length=10, max_length=200)
+
+
+@router.post("/auth/password", status_code=204)
+def change_password(data: PasswordIn, request: Request, ctx: Ctx = Depends(current), db: Session = Depends(get_db)):
+    """Cambio della propria password: serve quella attuale."""
+    ip = request.client.host if request.client else "?"
+    login_limiter.check(ip, ctx.login)
+    user = db.get(User, ctx.user_id)
+    if not verify_password(user, data.current):
+        login_limiter.fail(ip, ctx.login)
+        raise ApiError(400, "wrong_password", "La password attuale non è corretta.")
+    login_limiter.reset(ip, ctx.login)
+    user.password_hash = hash_password(data.new)
     db.commit()
 
 

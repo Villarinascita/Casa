@@ -112,6 +112,12 @@ nav a.active .nav-badge { background: #1b1d2a; color: var(--green); }
 .review-actions { display: flex; gap: 10px; }
 .review-actions button { flex: 1; min-height: 48px; font-size: 15px; }
 
+.review-card.bulk { background: transparent; border-style: dashed; border-color: var(--field-line); }
+.bulk-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 4px 0; }
+.bulk-row > span:first-child { font-size: 15px; color: var(--muted); overflow-wrap: anywhere; }
+.bulk-confirm { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; }
+.password-box { max-width: 620px; margin-bottom: 20px; }
+
 /* --- Da fare: schede Attività | Spesa ------------------------------------------------------ */
 
 .subtabs { display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 22px; border-radius: 16px; background: var(--paper-light); border: 1px solid var(--line); }

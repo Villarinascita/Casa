@@ -59,3 +59,15 @@ def test_api_inesistente_json(luca):
     response = luca.get("/api/v1/non-esiste")
     assert response.status_code == 404
     assert response.json()["code"] == "not_found"
+
+
+def test_cambio_password(luca):
+    from tests.conftest import PASSWORD, make_client
+    wrong = luca.post("/api/v1/auth/password", json={"current": "sbagliata", "new": "nuova-password-lunga"})
+    assert wrong.status_code == 400
+    short = luca.post("/api/v1/auth/password", json={"current": PASSWORD, "new": "corta"})
+    assert short.status_code == 422
+    assert luca.post("/api/v1/auth/password", json={"current": PASSWORD, "new": "nuova-password-lunga"}).status_code == 204
+    fresh = make_client()
+    assert fresh.post("/api/v1/auth/login", json={"login": "luca", "password": PASSWORD}).status_code == 401
+    assert fresh.post("/api/v1/auth/login", json={"login": "luca", "password": "nuova-password-lunga"}).status_code == 200

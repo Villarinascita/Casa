@@ -109,6 +109,9 @@ class HermesClient:
                   + _habits_text(examples) +
                   "Per event usa title e start_at con offset, oppure all_day e start_date. "
                   "Per task usa title, due_date/remind_at facoltativi. Per shopping usa label. "
+                  "SPESA (shopping): SOLO se l'email chiede esplicitamente alla famiglia di comprare qualcosa "
+                  "(es. materiale richiesto dalla scuola). Ordini, acquisti già fatti, ricevute, spedizioni, "
+                  "abbonamenti e offerte NON sono voci della spesa. "
                   + (bill_guide or f"Per bills usa una categoria SOLO tra queste: {category_list}. Se non è chiara, usa \"Altro\". ") +
                   "Servono sempre title e amount (numero, senza simbolo di valuta); due_date e supplier sono "
                   "facoltativi. Includi una bolletta solo se l'importo è chiaramente indicato nell'email: se "

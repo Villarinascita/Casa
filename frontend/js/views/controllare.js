@@ -9,6 +9,7 @@ import { heading } from './common.js';
 const FILTERS = [['tutto', 'Tutto'], ['email', 'Email'], ['calendario', 'Calendario']];
 let filter = 'tutto';
 let confirmingStale = false;
+let confirmingBulk = null; // 'all' oppure il dominio del mittente
 let data = { proposals: [], conflicts: [], loaded: false, error: null };
 
 const senderName = (sender) => (sender || '').replace(/<.*>/, '').replace(/"/g, '').trim() || 'mittente sconosciuto';
@@ -50,6 +51,24 @@ const conflictCard = (item) => html`<article class="review-card" data-conflict="
   </div>
 </article>`;
 
+const domainOf = (sender) => (sender || '').toLowerCase().replace(/[> ]+$/, '').split('@').pop() || null;
+
+/** Ignora in blocco: tutte, o tutte quelle dei mittenti che ne hanno mandate di più. */
+function bulkCard() {
+  if (filter === 'calendario' || data.proposals.length < 2) return '';
+  const counts = {};
+  data.proposals.forEach((p) => { const d = domainOf(p.sender); if (d) counts[d] = (counts[d] || 0) + 1; });
+  const top = Object.entries(counts).filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const action = (key, label, count) => (confirmingBulk === key
+    ? html`<span class="bulk-confirm">Sicuro? <button type="button" class="primary" data-bulk="${key}" data-confirm="yes">Sì, ignora ${count}</button><button type="button" data-bulk="${key}" data-confirm="no">No</button></span>`
+    : html`<button type="button" data-bulk="${key}">${label}</button>`);
+  return html`<div class="review-card bulk">
+    <strong>Fai pulizia in un colpo</strong>
+    <div class="bulk-row"><span>Tutte le proposte dalle email</span>${action('all', `Ignora tutte (${data.proposals.length})`, data.proposals.length)}</div>
+    ${top.map(([domain, n]) => html`<div class="bulk-row"><span>${domain} · ${n}</span>${action(domain, 'Ignora tutte', n)}</div>`)}
+  </div>`;
+}
+
 function staleCard() {
   const stale = state.review.stale;
   if (!stale || filter === 'calendario') return '';
@@ -70,7 +89,7 @@ export function render() {
   if (data.error) body = html`<p class="empty">${data.error}</p>`;
   else if (!data.loaded) body = html`<p class="empty">Caricamento…</p>`;
   else if (!proposals.length && !conflicts.length) body = html`<p class="empty">Niente da controllare. Quando Hermes trova qualcosa nelle email lo vedi qui.</p>`;
-  else body = html`${staleCard()}${conflicts.map(conflictCard)}${proposals.map(proposalCard)}`;
+  else body = html`${bulkCard()}${staleCard()}${conflicts.map(conflictCard)}${proposals.map(proposalCard)}`;
   return html`
     ${heading('Hermes chiede a te', 'Da controllare.', 'Cose trovate nelle email e nel calendario che aspettano una tua decisione. Un tocco per scegliere.')}
     <div class="filter-pills" role="group" aria-label="Filtra">
@@ -130,6 +149,22 @@ function bind(root, rerender) {
       await after(rerender, 'Conflitto risolto.');
     } catch (err) { toast(err.message); button.disabled = false; }
   }));
+  $('.review-card.bulk', root)?.addEventListener('click', async (e) => {
+    const button = e.target.closest('[data-bulk]');
+    if (!button) return;
+    const key = button.dataset.bulk;
+    if (!button.dataset.confirm || button.dataset.confirm === 'no') {
+      confirmingBulk = button.dataset.confirm === 'no' ? null : key;
+      rerender();
+      return;
+    }
+    button.disabled = true;
+    try {
+      const { rejected } = await api('POST', '/proposals/reject-all', { body: key === 'all' ? {} : { sender_domain: key } });
+      confirmingBulk = null;
+      await after(rerender, `${rejected} ${rejected === 1 ? 'proposta ignorata' : 'proposte ignorate'}.`);
+    } catch (err) { toast(err.message); button.disabled = false; }
+  });
   $('.review-card.stale', root)?.addEventListener('click', async (e) => {
     const action = e.target.closest('[data-stale]')?.dataset.stale;
     if (action === 'ask' || action === 'cancel') {

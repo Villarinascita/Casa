@@ -125,6 +125,9 @@ def ingest_message(db: Session, connection: GoogleConnection, message: dict,
                 validated = schema.model_validate(action.data)
                 if action.kind != "shopping" and (promo or unwanted):
                     continue
+                # Un acquisto (l'email contiene un costo) o la posta di massa non sono voci della spesa.
+                if action.kind == "shopping" and (promo or bulk or unwanted or bills):
+                    continue
                 if action.kind == "shopping" or bulk:
                     propose(action.kind, validated.model_dump(mode="json"))
                 else:
