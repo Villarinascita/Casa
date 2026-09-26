@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from . import errors
 from .config import settings
 from .errors import ApiError
-from .routers import assistant, auth, calendar, connections, google_connections, imports, proposals, resources
+from .routers import assistant, auth, calendar, connections, google_connections, imports, nonni, proposals, resources
 from .security import csrf_rejection
 
 CSP = ("default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; "
@@ -45,6 +45,7 @@ api.include_router(connections.router)
 api.include_router(google_connections.router)
 api.include_router(proposals.router)
 api.include_router(calendar.router)
+api.include_router(nonni.router)
 
 
 @api.get("/health", tags=["health"])

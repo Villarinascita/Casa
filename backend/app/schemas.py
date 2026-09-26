@@ -48,6 +48,7 @@ class HouseholdOut(OutSchema):
     areas: list[str]
     bill_categories: list[str]
     bill_taxonomy: dict[str, list[str]]
+    grandparent_members: list[str]
     blocked_email_domains: list[str]
     auto_trash_promotions: bool
     kept_email_senders: list[str]
@@ -58,6 +59,7 @@ class HouseholdPatch(Schema):
     areas: list[Text(60)] | None = Field(default=None, max_length=30)
     bill_categories: list[Text(60)] | None = Field(default=None, max_length=30)
     bill_taxonomy: dict[Text(60), list[Text(60)]] | None = Field(default=None, max_length=30)
+    grandparent_members: list[Text(36)] | None = Field(default=None, max_length=10)
     blocked_email_domains: list[str] | None = Field(default=None, max_length=100)
     auto_trash_promotions: bool | None = None
     kept_email_senders: list[str] | None = Field(default=None, max_length=100)

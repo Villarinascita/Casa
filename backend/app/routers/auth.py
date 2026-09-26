@@ -22,6 +22,7 @@ def household_out(household: Household) -> HouseholdOut:
                         version=household.version, areas=list(settings.get("areas", [])),
                         bill_categories=list(taxonomy_of(settings)),
                         bill_taxonomy=taxonomy_of(settings),
+                        grandparent_members=list(settings.get("grandparent_members", [])),
                         blocked_email_domains=list(settings.get("blocked_email_domains", [])),
                         auto_trash_promotions=bool(settings.get("auto_trash_promotions", True)),
                         kept_email_senders=list(settings.get("kept_email_senders", [])))
@@ -46,7 +47,7 @@ def login(data: LoginIn, request: Request, response: Response, db: Session = Dep
     login_limiter.reset(ip, data.login)
     if hasher.check_needs_rehash(user.password_hash):
         user.password_hash = hash_password(data.password)
-    start_session(db, response, user, membership.household_id)
+    start_session(db, response, user, membership.household_id, membership.role)
     db.commit()
     ctx = Ctx(user_id=user.id, login=user.login, household_id=membership.household_id, role=membership.role)
     return me_out(db, ctx)
@@ -101,6 +102,8 @@ def update_household(data: HouseholdPatch, ctx: Ctx = Depends(current), db: Sess
         current = taxonomy_of(household.settings)
         taxonomy = {c: current.get(c, []) for c in data.bill_categories}
         household.settings = {**(household.settings or {}), "bill_taxonomy": taxonomy, "bill_categories": list(taxonomy)}
+    if data.grandparent_members is not None:
+        household.settings = {**(household.settings or {}), "grandparent_members": data.grandparent_members}
     if data.bill_taxonomy is not None:
         household.settings = {**(household.settings or {}), "bill_taxonomy": data.bill_taxonomy,
                               "bill_categories": list(data.bill_taxonomy)}

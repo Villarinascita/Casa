@@ -59,9 +59,15 @@ class Ctx:
     role: str
 
 
-def start_session(db: Session, response: Response, user: User, household_id: str) -> None:
+# I nonni non devono rientrare di continuo: il loro accesso resta ricordato sei mesi.
+GRANDPARENT_SESSION_DAYS = 180
+# Un accesso «nonno» vede solo la propria pagina: tutto il resto dell'API gli è chiuso.
+GRANDPARENT_PATHS = {"/api/v1/me", "/api/v1/auth/logout", "/api/v1/nonni/week"}
+
+
+def start_session(db: Session, response: Response, user: User, household_id: str, role: str = "adult") -> None:
     token = secrets.token_urlsafe(32)
-    lifetime = timedelta(days=settings.session_days)
+    lifetime = timedelta(days=GRANDPARENT_SESSION_DAYS if role == "nonno" else settings.session_days)
     db.add(UserSession(token_hash=_token_hash(token), user_id=user.id, household_id=household_id,
                        expires_at=utcnow() + lifetime))
     response.set_cookie(COOKIE_NAME, token, max_age=int(lifetime.total_seconds()), httponly=True,
@@ -94,6 +100,8 @@ def current(request: Request, db: Session = Depends(get_db)) -> Ctx:
     session, user, membership = row
     if user.disabled or session.expires_at <= utcnow():
         raise ApiError(401, "session_expired", "Sessione scaduta. Accedi di nuovo.")
+    if membership.role == "nonno" and request.url.path not in GRANDPARENT_PATHS:
+        raise ApiError(403, "forbidden", "Questa pagina non è disponibile per questo accesso.")
     return Ctx(user_id=user.id, login=user.login, household_id=session.household_id, role=membership.role)
 
 

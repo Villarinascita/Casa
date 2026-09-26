@@ -89,7 +89,7 @@ export async function login(username, password) {
   const me = await api('POST', '/auth/login', { body: { login: username, password } });
   state.me = me;
   state.household = me.household;
-  await refresh();
+  if (me.role !== 'nonno') await refresh(); // i nonni vedono solo la loro pagina
   emit('login');
 }
 

@@ -37,6 +37,22 @@ export function render() {
       </form>
     </section>
 
+    ${state.me?.role === 'admin' ? html`<section class="module">
+      ${sectionHead('Pagina dei nonni')}
+      <p>I nonni entrano con il loro utente e vedono solo «Questa settimana»: gli appuntamenti e le attività assegnati a loro («Chi se ne occupa»). L'accesso resta ricordato sei mesi.</p>
+      <form id="grandparent-members">
+        <div class="checks">${state.members.filter((m) => !m.archived).map((m) => html`<label class="setting-check"><input type="checkbox" name="grandparent" value="${m.id}" ${(state.household?.grandparent_members || []).includes(m.id) ? 'checked' : ''}>${m.display_name}</label>`)}</div>
+        <button type="submit" class="primary">Salva chi sono i nonni</button>
+      </form>
+      <h3>Accessi dei nonni</h3>
+      <div id="grandparent-users" aria-live="polite">Caricamento…</div>
+      <form id="grandparent-create" class="quick-add" autocomplete="off">
+        <label class="grow"><span>Nuovo accesso (nome utente)</span><input name="login" required minlength="3" maxlength="40" placeholder="Es. nonna.anna"></label>
+        <button type="submit" class="primary">Crea accesso</button>
+      </form>
+      <div id="grandparent-password" class="password-reveal" aria-live="polite" hidden></div>
+    </section>` : ''}
+
     <section class="module">
       ${sectionHead('Aree della famiglia')}
       <form id="areas">
@@ -140,6 +156,7 @@ async function runImport(data) {
 export function mount(root) {
   loadGoogle(root).catch((err) => { $('#google-settings', root).textContent = err.message; });
   loadCleanups(root).catch((err) => { $('#email-cleanups', root).textContent = err.message; });
+  if ($('#grandparent-users', root)) mountGrandparents(root);
   loadAutoTrashed(root).catch((err) => { $('#auto-trashed', root).textContent = err.message; });
   api('GET', '/connections/telegram').then(({ connected }) => {
     $('#telegram-status', root).textContent = connected ? 'Account collegato.' : 'Account non ancora collegato.';
@@ -381,6 +398,49 @@ async function loadGoogle(root) {
       await api('DELETE', '/connections/google');
       toast('Google scollegato.');
       await loadGoogle(root);
+    } catch (err) { toast(err.message); }
+  });
+}
+
+/** La password si vede una volta sola: va scritta e data al nonno. */
+function showPassword(root, { login, password }) {
+  const box = $('#grandparent-password', root);
+  box.hidden = false;
+  box.innerHTML = String(html`<strong>Accesso per ${login}</strong>
+    <span>Indirizzo: ${location.origin}</span><span>Utente: <b>${login}</b></span><span>Password: <b>${password}</b></span>
+    <small>Scrivila adesso e dalla al nonno: poi non si vede più. Se si perde, crea una nuova password.</small>`);
+}
+
+async function loadGrandparents(root) {
+  const box = $('#grandparent-users', root);
+  const users = (await api('GET', '/household/users')).filter((u) => u.role === 'nonno');
+  box.innerHTML = users.length ? String(html`<ul class="grandparent-list">${users.map((u) => html`<li>
+    <span>${u.login}</span><button type="button" data-reset="${u.id}">Nuova password</button></li>`)}</ul>`)
+    : '<p>Nessun accesso per i nonni.</p>';
+  $$('[data-reset]', box).forEach((button) => button.addEventListener('click', async () => {
+    try {
+      showPassword(root, await api('POST', `/household/users/${button.dataset.reset}/password`));
+      toast('Nuova password creata: il vecchio accesso del telefono è chiuso.');
+    } catch (err) { toast(err.message); }
+  }));
+}
+
+function mountGrandparents(root) {
+  loadGrandparents(root).catch((err) => { $('#grandparent-users', root).textContent = err.message; });
+  $('#grandparent-members', root).addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      await updateHousehold({ grandparent_members: $$('[name=grandparent]:checked', e.target).map((i) => i.value) });
+      toast('Nonni salvati.');
+    } catch (err) { toast(err.message); }
+  });
+  $('#grandparent-create', root).addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const created = await api('POST', '/household/users', { body: { login: e.target.elements.login.value } });
+      e.target.reset();
+      showPassword(root, created);
+      await loadGrandparents(root);
     } catch (err) { toast(err.message); }
   });
 }

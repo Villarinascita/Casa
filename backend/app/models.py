@@ -82,7 +82,7 @@ class HouseholdUser(Base):
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
     role: Mapped[str] = mapped_column(String(20), default="adult")
 
-    __table_args__ = (CheckConstraint("role IN ('admin', 'adult')", name="ck_household_users_role"),)
+    __table_args__ = (CheckConstraint("role IN ('admin', 'adult', 'nonno')", name="ck_household_users_role"),)
 
 
 class UserSession(Base):

@@ -10,6 +10,7 @@ import * as controllare from './views/controllare.js';
 import * as famiglia from './views/famiglia.js';
 import * as impostazioni from './views/impostazioni.js';
 import * as loginView from './views/login.js';
+import * as nonni from './views/nonni.js';
 import * as oggi from './views/oggi.js';
 import * as spesa from './views/spesa.js';
 
@@ -50,8 +51,11 @@ function focusKey() {
 
 function renderChrome() {
   $('#date').textContent = formatLongToday();
-  const loggedIn = Boolean(state.me);
-  document.body.classList.toggle('logged-out', !loggedIn);
+  const grandparent = state.me?.role === 'nonno';
+  // Un accesso «nonno» vede solo la sua pagina: niente menu, niente «Aggiungi».
+  const loggedIn = Boolean(state.me) && !grandparent;
+  document.body.classList.toggle('logged-out', !state.me);
+  document.body.classList.toggle('nonno-mode', grandparent);
   const active = NAV_OF[currentRoute()] || currentRoute();
   const pending = reviewCount();
   const link = ([id, label]) => html`<a href="#${id}" class="${active === id ? 'active' : ''}" ${active === id ? html`aria-current="page"` : ''}>${label}${id === 'oggi' && pending ? html`<span class="nav-badge" aria-label="${pending} da controllare">${pending}</span>` : ''}</a>`;
@@ -89,7 +93,7 @@ export function render({ background = false } = {}) {
     $('#retry').addEventListener('click', start);
     return;
   }
-  const view = state.me ? ROUTES[currentRoute()].view : loginView;
+  const view = !state.me ? loginView : state.me.role === 'nonno' ? nonni : ROUTES[currentRoute()].view;
   const key = focusKey();
   screen.innerHTML = String(view.render());
   view.mount?.(screen);
@@ -117,7 +121,7 @@ function defaultTypeForRoute() {
 }
 
 async function sync() {
-  if (!state.me || !state.online || document.visibilityState !== 'visible') return;
+  if (!state.me || state.me.role === 'nonno' || !state.online || document.visibilityState !== 'visible') return;
   try {
     await refresh();
   } catch {
@@ -132,7 +136,7 @@ function scheduleMidnight() {
 async function start() {
   startupError = null;
   try {
-    if (await loadSession()) await refresh();
+    if (await loadSession() && state.me.role !== 'nonno') await refresh();
   } catch (err) {
     startupError = err.message;
   }

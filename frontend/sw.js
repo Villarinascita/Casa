@@ -1,14 +1,14 @@
 // Service worker: solo l'interfaccia va in cache (rete prima, cache se offline). Mai i dati di /api.
 // Aggiornare VERSION a ogni rilascio che cambia l'elenco dei file.
 
-const VERSION = '10';
+const VERSION = '11';
 const CACHE = `insieme-shell-v${VERSION}`;
 const ASSETS = [
   './', './index.html', './styles.css', './layout.css', './manifest.webmanifest', './icon.svg',
   './js/main.js', './js/api.js', './js/store.js', './js/dom.js', './js/dates.js', './js/editor.js',
   './js/views/common.js', './js/views/oggi.js', './js/views/calendario.js', './js/views/attivita.js',
   './js/views/spesa.js', './js/views/famiglia.js', './js/views/archivio.js', './js/views/impostazioni.js',
-  './js/views/login.js', './js/views/controllare.js', './js/views/altro.js',
+  './js/views/login.js', './js/views/controllare.js', './js/views/altro.js', './js/views/nonni.js',
 ];
 
 self.addEventListener('install', (event) => {

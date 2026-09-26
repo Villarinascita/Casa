@@ -194,6 +194,37 @@ nav a.active .nav-badge { background: #1b1d2a; color: var(--green); }
 .cost-table .sub th { padding-left: 32px; font-weight: 400; color: var(--muted); }
 .cost-table .sub td { color: var(--muted); }
 
+.grandparent-list { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 8px; max-width: 520px; }
+.grandparent-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 12px; }
+.password-reveal { display: grid; gap: 6px; max-width: 520px; margin-top: 12px; padding: 16px; border-radius: 14px; background: var(--green); color: #1b1d2a; font-size: 16px; }
+.password-reveal small { font-size: 14px; }
+
+/* --- Pagina dei nonni: scritte grandi, niente menu --------------------------------------------- */
+
+body.nonno-mode { display: block; }
+body.nonno-mode aside, body.nonno-mode main > header, body.nonno-mode #tabbar, body.nonno-mode #legacy-banner { display: none !important; }
+body.nonno-mode main { max-width: 760px; margin: 0 auto; padding: 16px 16px 40px; }
+.nonni { font-size: 22px; line-height: 1.35; }
+.nonni-head h1 { font-size: 36px; margin: 8px 0 18px; letter-spacing: -.5px; }
+.nonni-list { display: grid; gap: 16px; }
+.nonni-day { padding: 18px 20px; border-radius: 20px; background: var(--paper-light); border: 2px solid var(--line); }
+.nonni-day.today { border-color: var(--green); background: #222a3f; }
+.nonni-day h2 { font-size: 26px; margin: 0 0 10px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; }
+.nonni-day h2 span:not(.nonni-badge) { font-weight: 400; color: var(--muted); font-size: 22px; }
+.nonni-badge { padding: 2px 12px; border-radius: 10px; background: var(--green); color: #1b1d2a; font-size: 20px; font-weight: 800; }
+.nonni-day ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.nonni-item { display: grid; gap: 2px; padding: 12px 0 0; border-top: 1px solid var(--line); }
+.nonni-item:first-child { border-top: 0; padding-top: 0; }
+.nonni-time { font-size: 30px; font-weight: 800; color: var(--green); font-variant-numeric: tabular-nums; }
+.nonni-what { font-size: 26px; font-weight: 700; }
+.nonni-detail, .nonni-who { font-size: 21px; color: #d5dbee; }
+.nonni-free { margin: 0; font-size: 22px; color: var(--muted); }
+.nonni-bar { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px; }
+.nonni-nav { flex: 1 1 200px; min-height: 64px; font-size: 22px; border-radius: 16px; background: var(--paper-light); color: var(--ink); border: 2px solid var(--field-line); }
+.nonni-nav[data-week='next'] { background: var(--green); color: #1b1d2a; border-color: var(--green); }
+.nonni-foot { margin-top: 28px; font-size: 16px; color: var(--muted); }
+.nonni-exit { min-height: 44px; font-size: 16px; margin-left: 8px; }
+
 /* --- Tablet medio ------------------------------------------------------------------------ */
 
 @media (min-width: 851px) and (max-width: 1150px) {
