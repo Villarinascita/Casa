@@ -57,6 +57,44 @@ def test_una_nuova_connessione_avvia_la_pulizia_dei_domini_gia_bloccati(db_facto
         assert all(c.status == "running" for c in cleanups)
 
 
+def test_ricollegare_riusa_la_connessione_esistente_senza_duplicare_le_pulizie(db_factory, seed):
+    """Ricollegare Google (finish() con una connessione già esistente per l'utente) deve riusare
+    la stessa riga, non cancellare EmailProcessed e non creare EmailDomainCleanup duplicati anche
+    se la famiglia ha domini bloccati."""
+    class FakeApi:
+        def exchange_code(self, code, redirect_uri):
+            return {"access_token": "access", "refresh_token": "nuovo-refresh"}
+
+        def profile(self, access_token):
+            return {"emailAddress": "luca@gmail.com"}
+
+    key = "wVAlSzz5RaOEhYrG_tn3M_UFGxE8DnfNBUoUxgS2k2M="
+    service = GoogleService("client", "secret", "https://insieme.example/api/v1/connections/google/callback", key,
+                            FakeApi())
+    with db_factory() as db:
+        household = db.get(Household, seed["Rossi"])
+        household.settings = {**(household.settings or {}), "blocked_email_domains": ["news.com"]}
+        user = db.scalar(select(User).where(User.login == "luca"))
+        connection = GoogleConnection(household_id=seed["Rossi"], user_id=user.id, email="luca@gmail.com",
+                                      refresh_token_encrypted="vecchio")
+        db.add(connection)
+        db.flush()
+        connection_id = connection.id
+        db.add(EmailProcessed(connection_id=connection.id, message_id="mail-1"))
+        db.add(EmailDomainCleanup(household_id=seed["Rossi"], connection_id=connection.id, domain="news.com"))
+        db.commit()
+        ctx = Ctx(user.id, "luca", seed["Rossi"], "admin")
+        url = service.start(db, ctx)
+        state = parse_qs(urlparse(url).query)["state"][0]
+        reconnected = service.finish(db, state, "google-code")
+        assert reconnected.id == connection_id
+        assert db.scalar(select(GoogleConnection).where(GoogleConnection.id != connection_id)) is None
+        assert db.scalars(select(EmailProcessed).where(EmailProcessed.connection_id == connection_id)).all()
+        cleanups = db.scalars(select(EmailDomainCleanup).where(
+            EmailDomainCleanup.connection_id == connection_id)).all()
+        assert len(cleanups) == 1
+
+
 def test_calendar_selection_rejects_busy_as_outbound_default(luca, db_factory, seed):
     class FakeService:
         def access_token(self, connection):

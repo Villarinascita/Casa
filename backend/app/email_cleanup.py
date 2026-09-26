@@ -22,6 +22,10 @@ class TrashNotPermitted(Exception):
     """Gmail rifiuta il cestino (403): la connessione ha solo il permesso di lettura."""
 
 
+RATE_LIMIT_REASONS = {"rateLimitExceeded", "userRateLimitExceeded"}
+RATE_LIMIT_DETAIL_REASONS = {"RATE_LIMIT_EXCEEDED"}
+
+
 def _is_permission_denied(response: httpx.Response) -> bool:
     """Vero se il 403 indica scope/permesso insufficiente (non un rate limit)."""
     try:
@@ -31,19 +35,30 @@ def _is_permission_denied(response: httpx.Response) -> bool:
     error = body.get("error", {}) if isinstance(body, dict) else {}
     if not isinstance(error, dict):
         return False
-    if error.get("status") == "PERMISSION_DENIED":
-        return True
+    # Il rate limit va controllato per primo: un 403 con status PERMISSION_DENIED ma
+    # reason di rate limit non è un permesso mancante, va ritentato.
+    for item in error.get("errors") or []:
+        if isinstance(item, dict) and item.get("reason") in RATE_LIMIT_REASONS:
+            return False
+    for detail in error.get("details") or []:
+        if isinstance(detail, dict) and detail.get("reason") in RATE_LIMIT_DETAIL_REASONS:
+            return False
     for detail in error.get("details") or []:
         if isinstance(detail, dict) and detail.get("reason") == "ACCESS_TOKEN_SCOPE_INSUFFICIENT":
             return True
     for item in error.get("errors") or []:
         if isinstance(item, dict) and item.get("reason") == "insufficientPermissions":
             return True
-    return False
+    # Nessuna reason riconosciuta: un 403 PERMISSION_DENIED "nudo" si tratta per prudenza
+    # come permesso mancante (mostra solo un avviso e ritenta).
+    return error.get("status") == "PERMISSION_DENIED"
 
 
-def trash_message(service, token: str, message_id: str) -> None:
-    """Sposta un'email nel cestino di Gmail (recuperabile 30 giorni). Mai cancellazione permanente."""
+def trash_message(service, token: str, message_id: str) -> bool:
+    """Sposta un'email nel cestino di Gmail (recuperabile 30 giorni). Mai cancellazione permanente.
+
+    Ritorna True se l'email è stata effettivamente spostata, False se era già sparita (404).
+    """
     try:
         service.api.post(f"{GMAIL_MESSAGES}/{message_id}/trash", token, {})
     except httpx.HTTPStatusError as exc:
@@ -52,8 +67,9 @@ def trash_message(service, token: str, message_id: str) -> None:
                 raise TrashNotPermitted(TRASH_PERMISSION_MESSAGE) from exc
             raise  # es. rateLimitExceeded: si ritenta, non è un permesso mancante
         if exc.response.status_code == 404:
-            return  # già sparita: niente da fare
+            return False  # già sparita: niente da fare
         raise
+    return True
 
 
 def queue_domain_cleanups(db: Session, household_id: str, previous: Iterable[str], current: Iterable[str]) -> None:
@@ -100,26 +116,33 @@ def run_domain_cleanups(db: Session, service, now: datetime) -> int:
             continue
 
         page_trashed = 0
+        page_failed = False
         permission_denied = False
         for item in page.get("messages", []):
             try:
                 # La ricerca Gmail «from:» è per sottostringa: si verifica il dominio esatto.
                 if not is_blocked_sender(_sender(service, token, item["id"]), [row.domain]):
                     continue
-                trash_message(service, token, item["id"])
+                moved_now = trash_message(service, token, item["id"])
             except TrashNotPermitted:
                 connection.last_error = TRASH_PERMISSION_MESSAGE
+                if page_trashed:
+                    # Sono già state spostate email in questa pagina: si rispetta comunque la
+                    # regola "trashed >= 1 -> riparte dall'inizio" nonostante il permesso negato.
+                    row.page_token = None
                 db.commit()
                 permission_denied = True
                 break
             except Exception:
                 db.rollback()
+                page_failed = True
                 logger.warning("Errore sul messaggio %s del dominio %s; si continua con gli altri",
                                item["id"], row.domain, exc_info=True)
                 continue
-            row.trashed_count += 1
-            page_trashed += 1
-            moved += 1
+            if moved_now:
+                row.trashed_count += 1
+                page_trashed += 1
+                moved += 1
             db.commit()
 
         if permission_denied:
@@ -129,6 +152,11 @@ def run_domain_cleanups(db: Session, service, now: datetime) -> int:
             # Sono state spostate email in questa pagina: si riparte dall'inizio al prossimo giro
             # per non saltare messaggi con un set di risultati che si è ristretto.
             row.page_token = None
+        elif page_failed:
+            # Nessun successo ma almeno un fallimento non-permesso (es. 429/5xx transitorio):
+            # si ritenta la stessa pagina al prossimo giro, senza seguire nextPageToken né
+            # marcare la pulizia come conclusa.
+            pass
         else:
             next_token = page.get("nextPageToken")
             if next_token:
