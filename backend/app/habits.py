@@ -7,7 +7,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from .email_domains import sender_address
-from .models import EmailFeedback, Event, Task, utcnow
+from .models import Bill, EmailFeedback, Event, Task, utcnow
 
 DISCARDED_EXAMPLES = 30
 KEPT_EXAMPLES = 20
@@ -31,6 +31,8 @@ def on_delete(db: Session, obj) -> None:
     if isinstance(obj, (Event, Task)) and obj.source == "gmail":
         record(db, obj.household_id, "event" if isinstance(obj, Event) else "task", obj.title,
                obj.source_sender, "discarded", obj.id)
+    elif isinstance(obj, Bill) and obj.source_sender:
+        record(db, obj.household_id, "bill", obj.title, obj.source_sender, "discarded", obj.id)
 
 
 def on_restore(db: Session, obj) -> None:

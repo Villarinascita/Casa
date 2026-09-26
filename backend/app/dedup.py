@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from .models import Event, Task
+from .models import Bill, Event, Task
 
 SAME = 0.85
 DOUBTFUL = 0.34
@@ -124,3 +124,17 @@ def find_same_task(db: Session, household_id: str, title: str) -> Task | None:
     open_tasks = db.scalars(select(Task).where(Task.household_id == household_id, Task.deleted_at.is_(None),
                                                Task.status == "open")).all()
     return next((t for t in open_tasks if similarity(title, t.title) >= SAME_TASK), None)
+
+
+def find_same_bill(db: Session, household_id: str, data: dict) -> Bill | None:
+    """Stesso importo, titolo o fornitore simile e stesso mese (o scadenza mancante): è la stessa somma."""
+    rows = db.scalars(select(Bill).where(Bill.household_id == household_id, Bill.deleted_at.is_(None),
+                                         Bill.amount == data["amount"])).all()
+    due = data.get("due_date")
+    for bill in rows:
+        if due and bill.due_date and (due.year, due.month) != (bill.due_date.year, bill.due_date.month):
+            continue
+        if (similarity(data.get("title", ""), bill.title) >= DOUBTFUL
+                or (data.get("supplier") and bill.supplier and similarity(data["supplier"], bill.supplier) >= SAME)):
+            return bill
+    return None

@@ -88,7 +88,8 @@ class HermesClient:
         prompt = ("Estrai appuntamenti, attività e voci spesa da questa email, e separatamente eventuali "
                   "bollette o costi da pagare. Rispondi solo con JSON: "
                   '{"actions":[{"kind":"event|task|shopping","data":{...}}],'
-                  '"bills":[{"category":"...","title":"...","supplier":"...","amount":0.0,"due_date":"YYYY-MM-DD"}],'
+                  '"bills":[{"category":"...","title":"...","supplier":"...","amount":0.0,"due_date":"YYYY-MM-DD",'
+                  '"payment_state":"da_pagare|pagato|addebito_previsto"}],'
                   '"promo":false}. '
                   "APPUNTAMENTI (event): SOLO impegni già presi dalla famiglia che la riguardano di persona: "
                   "visite mediche, prenotazioni confermate (voli, treni, hotel, parcheggi, ristoranti), "
@@ -111,6 +112,15 @@ class HermesClient:
                   "Servono sempre title e amount (numero, senza simbolo di valuta); due_date e supplier sono "
                   "facoltativi. Includi una bolletta solo se l'importo è chiaramente indicato nell'email: se "
                   "manca, ometti quella voce piuttosto che indovinare un numero. "
+                  "COSTI (bills): SOLO somme che la famiglia deve pagare davvero o ha già pagato: bollette, "
+                  "fatture, rate, abbonamenti addebitati, ricevute di pagamento, acquisti confermati. NON sono "
+                  "costi: preventivi, offerte, stime, prezzi di listino, opzioni alternative tra cui scegliere "
+                  "(inserisci al massimo quella scelta, se l'email lo dice), costi condizionati («se non "
+                  "funziona servirà…»), corsi, eventi o servizi proposti e non acquistati, pagamenti rifiutati "
+                  "o non andati a buon fine. payment_state: «pagato» se l'email è una ricevuta o conferma di un "
+                  "pagamento già fatto (usa come due_date la data del pagamento), «addebito_previsto» se verrà "
+                  "addebitato in automatico, altrimenti «da_pagare». Una sola voce per ogni somma: non ripetere "
+                  "lo stesso importo con titoli diversi. "
                   "promo è true SOLO se l'email è pura pubblicità, newsletter, offerte o marketing, senza "
                   "ordini, ricevute, fatture, spedizioni, appuntamenti, scadenze, avvisi di sicurezza o "
                   "comunicazioni personali; nel dubbio false. "

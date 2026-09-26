@@ -222,3 +222,57 @@ def test_proposte_insegnano(luca, db_factory, seed):
         assert (feedback.title, feedback.verdict) == ("Colloquio", "kept")
         event = db.scalar(select(Event))
         assert event.source == "gmail" and event.source_sender == "scuola@x.it"
+
+
+def test_costi_ricevuta_pagata_e_doppione(db_factory, seed):
+    from app.models import Bill
+    with db_factory() as db:
+        connection = _connection(db, seed)
+        receipt = {"actions": [], "bills": [{"category": "Altro", "title": "Pagamento Netflix", "supplier": "Netflix",
+                                              "amount": 6.99, "due_date": "2026-09-25", "payment_state": "pagato"}]}
+        again = {"actions": [], "bills": [{"category": "Altro", "title": "Abbonamento Netflix settembre",
+                                            "supplier": "NETFLIX SERVICES ITA", "amount": 6.99, "due_date": "2026-09-26"}]}
+        ingest_message(db, connection, _message("m1"), lambda t: receipt, "Europe/Rome", NOW)
+        ingest_message(db, connection, _message("m2"), lambda t: again, "Europe/Rome", NOW)
+        bills = db.scalars(select(Bill)).all()
+        assert len(bills) == 1 and bills[0].payment_state == "pagato"
+
+
+def test_costi_diversi_stesso_importo_restano(db_factory, seed):
+    from app.models import Bill
+    with db_factory() as db:
+        connection = _connection(db, seed)
+        for i, (title, supplier) in enumerate([("Bolletta luce", "Octopus"), ("Rata assicurazione", "Prima")]):
+            ingest_message(db, connection, _message(f"m{i}"), lambda t, a=title, b=supplier: {"actions": [], "bills": [
+                {"category": "Altro", "title": a, "supplier": b, "amount": 62.22, "due_date": "2026-09-10"}]},
+                "Europe/Rome", NOW)
+        assert len(db.scalars(select(Bill)).all()) == 2
+
+
+def test_eliminare_un_costo_dalle_email_insegna(luca, db_factory, seed):
+    from app.models import Bill
+    with db_factory() as db:
+        bill = Bill(household_id=seed["Rossi"], category="Altro", title="Preventivo scheda caldaia", amount=440,
+                    source_sender="Mantec <info@mantec.it>")
+        db.add(bill)
+        db.commit()
+        bill_id, version = bill.id, bill.version
+    assert luca.delete(f"/api/v1/bills/{bill_id}", headers={"If-Match": str(version)}).status_code == 200
+    with db_factory() as db:
+        feedback = db.scalar(select(EmailFeedback))
+        assert (feedback.kind, feedback.title) == ("bill", "Preventivo scheda caldaia")
+
+
+def test_prompt_esclude_preventivi():
+    import httpx
+    from app.hermes_client import HermesClient
+    captured = {}
+
+    def respond(request):
+        captured["body"] = __import__("json").loads(request.content)["messages"][0]["content"]
+        return httpx.Response(200, json={"choices": [{"message": {"content": '{"actions":[]}'}}]})
+
+    HermesClient("http://h", "k", "m", httpx.Client(transport=httpx.MockTransport(respond))).analyze_email(
+        "x", "Europe/Rome", "m", ["Altro"])
+    for phrase in ("preventivi", "costi condizionati", "opzioni alternative", "«pagato» se l'email è una ricevuta"):
+        assert phrase in captured["body"], phrase

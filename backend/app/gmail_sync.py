@@ -12,7 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from . import habits
-from .dedup import find_same_event, find_same_task
+from .dedup import find_same_bill, find_same_event, find_same_task
 from .email_cleanup import TRASH_PERMISSION_MESSAGE, TrashNotPermitted, trash_message
 from .email_domains import is_blocked_sender
 from .email_promotions import is_bulk_mail, is_promotion_to_trash, trashed_sender
@@ -156,16 +156,23 @@ def ingest_message(db: Session, connection: GoogleConnection, message: dict,
                 created_count += 1
         for item in bills:
             try:
+                item = dict(item)
+                state = item.pop("payment_state", None)
                 bill_data = BillIn.model_validate(item).model_dump()
-            except (ValidationError, KeyError):
+            except (ValidationError, KeyError, TypeError, ValueError):
                 # Una voce malformata non deve far saltare le altre bollette né le azioni
                 # già create nello stesso messaggio (finding §2 revisione finale).
                 continue
             if bill_data["amount"] is None:
                 # Nessun importo individuabile: meglio non creare la voce che indovinare (§3 del design).
                 continue
+            if find_same_bill(db, connection.household_id, bill_data):
+                continue  # la stessa somma già registrata (altra email sullo stesso pagamento)
             db.add(Bill(household_id=connection.household_id, created_by=connection.user_id,
-                        source_sender=sender or None, source_subject=subject or None, **bill_data))
+                        source_sender=sender or None, source_subject=subject or None,
+                        payment_state=state if state in ("pagato", "addebito_previsto") else "da_pagare",
+                        **bill_data))
+            db.flush()
             created_count += 1
     except (HermesInvalidResponse, ValidationError, KeyError, SQLAlchemyError):
         # Il modello ha risposto con qualcosa di inutilizzabile per questo messaggio: si
