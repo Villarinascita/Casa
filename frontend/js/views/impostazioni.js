@@ -44,6 +44,10 @@ export function render() {
         <div class="checks">${state.members.filter((m) => !m.archived).map((m) => html`<label class="setting-check"><input type="checkbox" name="grandparent" value="${m.id}" ${(state.household?.grandparent_members || []).includes(m.id) ? 'checked' : ''}>${m.display_name}</label>`)}</div>
         <button type="submit" class="primary">Salva chi sono i nonni</button>
       </form>
+      <h3>Programma dei nonni</h3>
+      <p>Carica un PDF o un Word con le cose che devono fare i nonni: Hermes lo legge e te lo fa confermare in «Da controllare». Puoi anche mandarlo al bot Telegram.</p>
+      <label class="file-button">Carica il programma (PDF o Word)<input type="file" id="plan-file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"></label>
+      <p id="plan-status" role="status"></p>
       <h3>Accessi dei nonni</h3>
       <div id="grandparent-users" aria-live="polite">Caricamento…</div>
       <form id="grandparent-create" class="quick-add" autocomplete="off">
@@ -425,7 +429,25 @@ async function loadGrandparents(root) {
   }));
 }
 
+const toBase64 = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result).split(',')[1]);
+  reader.onerror = () => reject(new Error('Non riesco a leggere il file.'));
+  reader.readAsDataURL(file);
+});
+
 function mountGrandparents(root) {
+  $('#plan-file', root).addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const status = $('#plan-status', root);
+    status.textContent = 'Carico il file…';
+    try {
+      await api('POST', '/nonni/plans', { body: { filename: file.name, content_base64: await toBase64(file) } });
+      status.innerHTML = String(html`Caricato. Hermes lo sta leggendo: tra meno di un minuto lo trovi in <a href="#controllare">Da controllare</a> da confermare.`);
+    } catch (err) { status.textContent = err.message; }
+    e.target.value = '';
+  });
   loadGrandparents(root).catch((err) => { $('#grandparent-users', root).textContent = err.message; });
   $('#grandparent-members', root).addEventListener('submit', async (e) => {
     e.preventDefault();

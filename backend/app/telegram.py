@@ -10,10 +10,48 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .email_promotions import keep_command, keep_sender
-from .models import ChannelLink, HouseholdUser, TelegramLinkCode, TelegramPending, TelegramUpdate, User, utcnow
+from .grandparent_plan import PlanError, apply_plan, create_plan
+from .models import ChannelLink, GrandparentPlan, HouseholdUser, TelegramLinkCode, TelegramPending, TelegramUpdate, User, utcnow
 from .routers.assistant import create_actions
 from .schemas import ActionBatchIn
 from .security import Ctx
+
+
+YES = {"sì", "si", "sí", "ok", "conferma", "confermo", "va bene"}
+NO = {"no", "scarta", "annulla"}
+
+
+def _linked_user(db: Session, message: dict) -> tuple[ChannelLink, User] | None:
+    sender = message.get("from") or {}
+    link = db.scalar(select(ChannelLink).where(ChannelLink.platform == "telegram",
+                                               ChannelLink.external_user_id == str(sender.get("id"))))
+    user = db.get(User, link.user_id) if link else None
+    membership = db.get(HouseholdUser, (link.household_id, link.user_id)) if link else None
+    if not link or user is None or user.disabled or membership is None or membership.role == "nonno":
+        return None
+    return link, user
+
+
+def receive_document(db: Session, update: dict[str, Any], filename: str, data: bytes) -> str:
+    """File mandato al bot: se è il programma dei nonni lo salva, Hermes lo legge subito dopo."""
+    message = update.get("message") or {}
+    found = _linked_user(db, message)
+    if found is None:
+        return "Collega Telegram dalle Impostazioni del gestionale e invia /link seguito dal codice."
+    link, user = found
+    try:
+        create_plan(db, link.household_id, user.id, "telegram", filename, data)
+    except PlanError as exc:
+        return str(exc)
+    return f"Ho ricevuto «{filename}»: lo leggo e tra poco ti scrivo il programma dei nonni da confermare."
+
+
+def _pending_plan(db: Session, link: ChannelLink, user_id: str) -> GrandparentPlan | None:
+    since = utcnow() - timedelta(days=2)
+    return db.scalar(select(GrandparentPlan).where(
+        GrandparentPlan.household_id == link.household_id, GrandparentPlan.created_by == user_id,
+        GrandparentPlan.source == "telegram", GrandparentPlan.status == "pending",
+        GrandparentPlan.created_at >= since).order_by(GrandparentPlan.created_at.desc()))
 
 
 def process_update(db: Session, update: dict[str, Any],
@@ -67,6 +105,19 @@ def process_update(db: Session, update: dict[str, Any],
         if pending and pending.expires_at <= utcnow():
             db.delete(pending)
             pending = None
+        plan = _pending_plan(db, link, user.id) if text.lower().strip(" .!") in YES | NO else None
+        if plan is not None:
+            if text.lower().strip(" .!") in YES:
+                result = apply_plan(db, plan, user.id, utcnow())
+                reply = (f"Fatto: ho inserito {result['created']} impegni dei nonni"
+                         + (f" (e aggiunto {', '.join(result['new_members'])} tra i familiari)" if result["new_members"] else "")
+                         + ". Li vedono nella loro pagina.")
+            else:
+                plan.status = "discarded"
+                reply = "Va bene, programma scartato."
+            db.add(TelegramUpdate(update_id=update_id, response=reply))
+            db.commit()
+            return reply
         kept = keep_command(db, link.household_id, text)
         if kept is not None:
             reply = keep_sender(db, link.household_id, kept)

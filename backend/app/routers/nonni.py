@@ -1,6 +1,8 @@
 """La settimana dei nonni: una sola pagina, solo lettura, con le cose assegnate ai nonni
 (vedi docs/superpowers/specs/2026-09-26-settimana-nonni-design.md)."""
 
+import base64
+import binascii
 import secrets
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
@@ -12,7 +14,8 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..errors import ApiError
-from ..models import Event, Household, HouseholdUser, Member, Task, User, UserSession
+from ..grandparent_plan import PlanError, apply_plan, create_plan, describe
+from ..models import Event, GrandparentPlan, Household, HouseholdUser, Member, Task, User, UserSession, utcnow
 from ..security import Ctx, current, hash_password
 
 router = APIRouter(tags=["nonni"])
@@ -128,3 +131,65 @@ def reset_grandparent_password(user_id: str, ctx: Ctx = Depends(current), db: Se
         db.delete(session)
     db.commit()
     return {"id": user.id, "login": user.login, "password": password}
+
+
+# --- Programma dei nonni da file (PDF o Word) --------------------------------------------------
+
+class PlanUpload(BaseModel):
+    filename: str = Field(min_length=1, max_length=200)
+    content_base64: str = Field(max_length=11_000_000)
+
+
+def _plan_out(plan: GrandparentPlan) -> dict:
+    return {"id": plan.id, "filename": plan.filename, "status": plan.status, "notes": plan.notes,
+            "source": plan.source, "created_at": plan.created_at,
+            "items": [{**item, "summary": describe(item)} for item in plan.items or []]}
+
+
+def _owned_plan(db: Session, ctx: Ctx, plan_id: str) -> GrandparentPlan:
+    plan = db.get(GrandparentPlan, plan_id)
+    if plan is None or plan.household_id != ctx.household_id:
+        raise ApiError(404, "not_found", "Programma non trovato.")
+    return plan
+
+
+@router.post("/nonni/plans", status_code=201)
+def upload_plan(data: PlanUpload, ctx: Ctx = Depends(current), db: Session = Depends(get_db)):
+    """Carica il file: Hermes lo legge in pochi istanti, poi il programma è da confermare."""
+    try:
+        raw = base64.b64decode(data.content_base64, validate=True)
+    except (binascii.Error, ValueError):
+        raise ApiError(422, "invalid_file", "File non valido.") from None
+    try:
+        plan = create_plan(db, ctx.household_id, ctx.user_id, "app", data.filename, raw)
+    except PlanError as exc:
+        raise ApiError(422, "invalid_file", str(exc)) from None
+    return _plan_out(plan)
+
+
+@router.get("/nonni/plans")
+def list_plans(ctx: Ctx = Depends(current), db: Session = Depends(get_db)):
+    """Programmi in lettura, da confermare o non letti (le ultime 24 ore per quelli falliti)."""
+    rows = db.scalars(select(GrandparentPlan).where(
+        GrandparentPlan.household_id == ctx.household_id,
+        GrandparentPlan.status.in_(("reading", "pending", "failed")))
+        .order_by(GrandparentPlan.created_at.desc())).all()
+    recent = utcnow() - timedelta(days=1)
+    return [_plan_out(p) for p in rows if p.status != "failed" or p.created_at >= recent]
+
+
+@router.post("/nonni/plans/{plan_id}/apply")
+def confirm_plan(plan_id: str, ctx: Ctx = Depends(current), db: Session = Depends(get_db)):
+    plan = _owned_plan(db, ctx, plan_id)
+    try:
+        return apply_plan(db, plan, ctx.user_id, utcnow())
+    except PlanError as exc:
+        raise ApiError(409, "plan_closed", str(exc)) from None
+
+
+@router.post("/nonni/plans/{plan_id}/discard", status_code=204)
+def discard_plan(plan_id: str, ctx: Ctx = Depends(current), db: Session = Depends(get_db)):
+    plan = _owned_plan(db, ctx, plan_id)
+    if plan.status in ("reading", "pending", "failed"):
+        plan.status = "discarded"
+        db.commit()

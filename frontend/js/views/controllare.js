@@ -10,7 +10,8 @@ const FILTERS = [['tutto', 'Tutto'], ['email', 'Email'], ['calendario', 'Calenda
 let filter = 'tutto';
 let confirmingStale = false;
 let confirmingBulk = null; // 'all' oppure il dominio del mittente
-let data = { proposals: [], conflicts: [], loaded: false, error: null };
+let data = { proposals: [], conflicts: [], plans: [], loaded: false, error: null };
+let planTimer = null;
 
 const senderName = (sender) => (sender || '').replace(/<.*>/, '').replace(/"/g, '').trim() || 'mittente sconosciuto';
 
@@ -69,6 +70,28 @@ function bulkCard() {
   </div>`;
 }
 
+/** Programma dei nonni caricato da file: in lettura, da confermare o non leggibile. */
+function planCard(plan) {
+  if (plan.status === 'reading') {
+    return html`<article class="review-card plan"><span class="review-kind task">PROGRAMMA DEI NONNI</span>
+      <strong class="review-title">Sto leggendo «${plan.filename}»…</strong><span class="meta">Ci vuole meno di un minuto.</span></article>`;
+  }
+  if (plan.status === 'failed') {
+    return html`<article class="review-card plan" data-plan="${plan.id}"><span class="review-kind task">PROGRAMMA DEI NONNI</span>
+      <strong class="review-title">Non sono riuscito a leggere «${plan.filename}»</strong><span class="meta">${plan.notes}</span>
+      <div class="review-actions"><button type="button" data-plan-action="discard">Chiudi</button></div></article>`;
+  }
+  return html`<article class="review-card plan" data-plan="${plan.id}">
+    <span class="review-kind task">PROGRAMMA DEI NONNI · ${plan.filename}</span>
+    <strong class="review-title">${plan.items.length} ${plan.items.length === 1 ? 'impegno' : 'impegni'} da inserire nella pagina dei nonni</strong>
+    <ul class="plan-items">${plan.items.map((item) => html`<li>${item.summary}</li>`)}</ul>
+    ${plan.notes ? html`<p class="plan-notes">Da verificare: ${plan.notes}</p>` : ''}
+    <span class="meta">Le cose che si ripetono vengono inserite ogni settimana fino alla data indicata. Gli impegni futuri di un programma precedente vengono sostituiti.</span>
+    <div class="review-actions"><button type="button" class="primary" data-plan-action="apply">Conferma e inserisci</button>
+      <button type="button" data-plan-action="discard">Scarta</button></div>
+  </article>`;
+}
+
 function staleCard() {
   const stale = state.review.stale;
   if (!stale || filter === 'calendario') return '';
@@ -82,14 +105,14 @@ function staleCard() {
 }
 
 export function render() {
-  const counts = { tutto: data.proposals.length + data.conflicts.length, email: data.proposals.length, calendario: data.conflicts.length };
+  const counts = { tutto: data.proposals.length + data.conflicts.length + data.plans.length, email: data.proposals.length, calendario: data.conflicts.length };
   const proposals = filter === 'calendario' ? [] : data.proposals;
   const conflicts = filter === 'email' ? [] : data.conflicts;
   let body;
   if (data.error) body = html`<p class="empty">${data.error}</p>`;
   else if (!data.loaded) body = html`<p class="empty">Caricamento…</p>`;
-  else if (!proposals.length && !conflicts.length) body = html`<p class="empty">Niente da controllare. Quando Hermes trova qualcosa nelle email lo vedi qui.</p>`;
-  else body = html`${bulkCard()}${staleCard()}${conflicts.map(conflictCard)}${proposals.map(proposalCard)}`;
+  else if (!proposals.length && !conflicts.length && !data.plans.length) body = html`<p class="empty">Niente da controllare. Quando Hermes trova qualcosa nelle email lo vedi qui.</p>`;
+  else body = html`${filter === 'tutto' ? data.plans.map(planCard) : ''}${bulkCard()}${staleCard()}${conflicts.map(conflictCard)}${proposals.map(proposalCard)}`;
   return html`
     ${heading('Hermes chiede a te', 'Da controllare.', 'Cose trovate nelle email e nel calendario che aspettano una tua decisione. Un tocco per scegliere.')}
     <div class="filter-pills" role="group" aria-label="Filtra">
@@ -100,11 +123,15 @@ export function render() {
 
 async function load(rerender) {
   try {
-    const [proposals, conflicts] = await Promise.all([
+    const [proposals, conflicts, plans] = await Promise.all([
       api('GET', '/proposals?status=pending'),
       api('GET', '/calendar/conflicts').catch(() => []),
+      api('GET', '/nonni/plans').catch(() => []),
     ]);
-    data = { proposals, conflicts, loaded: true, error: null };
+    data = { proposals, conflicts, plans, loaded: true, error: null };
+    // Un programma ancora in lettura: si ricontrolla tra qualche secondo.
+    clearTimeout(planTimer);
+    if (plans.some((p) => p.status === 'reading')) planTimer = setTimeout(() => load(rerender), 5000);
   } catch (err) {
     data = { ...data, loaded: true, error: err.message };
   }
@@ -147,6 +174,19 @@ function bind(root, rerender) {
     try {
       await api('POST', `/calendar/conflicts/${id}/resolve`, { body: { choice: button.dataset.choice } });
       await after(rerender, 'Conflitto risolto.');
+    } catch (err) { toast(err.message); button.disabled = false; }
+  }));
+  $$('[data-plan-action]', root).forEach((button) => button.addEventListener('click', async () => {
+    const id = button.closest('[data-plan]').dataset.plan;
+    button.disabled = true;
+    try {
+      if (button.dataset.planAction === 'apply') {
+        const result = await api('POST', `/nonni/plans/${id}/apply`);
+        await after(rerender, `Inseriti ${result.created} impegni nella pagina dei nonni.`);
+      } else {
+        await api('POST', `/nonni/plans/${id}/discard`);
+        await after(rerender, 'Programma scartato.');
+      }
     } catch (err) { toast(err.message); button.disabled = false; }
   }));
   $('.review-card.bulk', root)?.addEventListener('click', async (e) => {

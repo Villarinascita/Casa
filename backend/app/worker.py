@@ -20,9 +20,10 @@ from .email_promotions import dispatch_promo_summaries
 from .gmail_sync import sync_gmail
 from .google import GoogleService
 from .hermes_client import HermesClient
-from .models import Event, GoogleCalendar, GoogleConnection, Household, WorkerCursor
+from .models import ChannelLink, Event, GoogleCalendar, GoogleConnection, Household, WorkerCursor
 from .reminders import dispatch_pending, enqueue_due
-from .telegram import process_update
+from .grandparent_plan import process_plans
+from .telegram import process_update, receive_document
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +103,14 @@ class TelegramApi:
     def send(self, chat_id: str, text: str) -> None:
         self._post("sendMessage", {"chat_id": chat_id, "text": text[:4096]})
 
+    def download(self, file_id: str, max_bytes: int = 8_000_000) -> bytes:
+        file_info = self._post("getFile", {"file_id": file_id})
+        if file_info.get("file_size", 0) > max_bytes:
+            raise RuntimeError("File troppo grande")
+        content = self.client.get(f"https://api.telegram.org/file/bot{self.token}/{file_info['file_path']}")
+        content.raise_for_status()
+        return content.content
+
     def transcribe(self, file_id: str) -> str:
         if not self.stt_url or not self.stt_api_key:
             raise RuntimeError("Trascrizione vocale non configurata")
@@ -115,6 +124,16 @@ class TelegramApi:
                                   files={"file": ("voice.ogg", audio.content, "audio/ogg")})
         result.raise_for_status()
         return result.json()["text"].strip()
+
+
+def notify_plan(db: Session, messenger, plan, summary: str) -> None:
+    """Programma caricato da Telegram: il riepilogo torna in chat con la richiesta di conferma."""
+    if plan.source != "telegram":
+        return
+    link = db.scalar(select(ChannelLink).where(ChannelLink.user_id == plan.created_by, ChannelLink.platform == "telegram"))
+    if link:
+        ask = "\n\nRispondi «sì» per inserirlo o «no» per scartarlo." if plan.status == "pending" else ""
+        messenger.send(link.chat_id, summary + ask)
 
 
 def run_once(db: Session, messenger, interpret, now: datetime) -> None:
@@ -138,6 +157,18 @@ def run_once(db: Session, messenger, interpret, now: datetime) -> None:
                     cursor.value = update["update_id"] + 1
                     db.commit()
                     continue
+            if message.get("document"):
+                document = message["document"]
+                try:
+                    data = messenger.download(document["file_id"])
+                    reply = receive_document(db, update, document.get("file_name") or "file", data)
+                except Exception:
+                    logger.exception("File Telegram non scaricato")
+                    reply = "Non riesco a scaricare il file (massimo 8 MB). Riprova o caricalo dall'app."
+                messenger.send(str(chat["id"]), reply)
+                cursor.value = update["update_id"] + 1
+                db.commit()
+                continue
             reply = process_update(db, update, interpret)
             messenger.send(str(chat["id"]), reply)
         cursor.value = update["update_id"] + 1
@@ -167,6 +198,13 @@ def main() -> None:
                     timezone_name = db.get(Household, ctx.household_id).timezone
                     return hermes.interpret(text, ctx, timezone_name)
                 run_once(db, messenger, interpret, datetime.now(timezone.utc))
+                try:
+                    process_plans(db, lambda text, members, today: hermes_email.read_grandparent_plan(
+                        text, members, today, settings.hermes_email_model), datetime.now(timezone.utc),
+                        notify=lambda plan, summary: notify_plan(db, messenger, plan, summary))
+                except Exception:
+                    db.rollback()
+                    logger.exception("Lettura dei programmi dei nonni fallita")
                 if google:
                     run_google_once(db, google, hermes_email, datetime.now(timezone.utc))
                     dispatch_bill_reminders(db, messenger.send, datetime.now(timezone.utc))

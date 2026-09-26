@@ -412,6 +412,28 @@ class EmailFeedback(Base):
     __table_args__ = (CheckConstraint("verdict IN ('kept', 'discarded')", name="ck_email_feedback_verdict"),)
 
 
+class GrandparentPlan(Base):
+    """Programma dei nonni caricato da file: «reading» finché Hermes lo legge, poi «pending» da
+    confermare («applied») o scartare («discarded»); «failed» se non è leggibile."""
+
+    __tablename__ = "grandparent_plans"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id"), index=True)
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    source: Mapped[str] = mapped_column(String(10))
+    filename: Mapped[str] = mapped_column(String(200))
+    text: Mapped[str] = mapped_column(Text)
+    items: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    notes: Mapped[str | None] = mapped_column(String(1000))
+    status: Mapped[str] = mapped_column(String(10), default="reading")
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    applied_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+    __table_args__ = (CheckConstraint("status IN ('reading', 'pending', 'failed', 'applied', 'discarded')",
+                                      name="ck_grandparent_plans_status"),)
+
+
 class CalendarEventLink(Base):
     __tablename__ = "calendar_event_links"
 

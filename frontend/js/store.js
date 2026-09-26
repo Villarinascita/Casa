@@ -20,7 +20,7 @@ export const state = {
   tasks: [],
   shopping: [],
   bills: [],
-  review: { proposals: 0, stale: 0, conflicts: 0 },
+  review: { proposals: 0, stale: 0, conflicts: 0, plans: 0 },
   loaded: false,
   online: navigator.onLine,
   lastSync: null,
@@ -40,7 +40,7 @@ function sortAll() {
 
 export const memberById = (id) => state.members.find((m) => m.id === id);
 /** Quante cose aspettano una decisione in «Da controllare». */
-export const reviewCount = () => state.review.proposals + state.review.conflicts;
+export const reviewCount = () => state.review.proposals + state.review.conflicts + state.review.plans;
 export const activeMembers = () => state.members.filter((m) => !m.archived);
 export const find = (kind, id) => state[KINDS[kind].key].find((item) => item.id === id);
 
@@ -96,7 +96,7 @@ export async function login(username, password) {
 export async function logout() {
   await api('POST', '/auth/logout').catch(() => {});
   Object.assign(state, { me: null, household: null, members: [], events: [], tasks: [], shopping: [], bills: [],
-    review: { proposals: 0, stale: 0, conflicts: 0 }, loaded: false });
+    review: { proposals: 0, stale: 0, conflicts: 0, plans: 0 }, loaded: false });
   emit('logout');
 }
 
@@ -117,11 +117,13 @@ export async function refresh() {
 
 /** Conteggi di «Da controllare»: un errore qui (es. Google non collegato) non blocca il resto. */
 export async function refreshReview() {
-  const [summary, conflicts] = await Promise.allSettled([api('GET', '/proposals/summary'), api('GET', '/calendar/conflicts')]);
+  const [summary, conflicts, plans] = await Promise.allSettled([
+    api('GET', '/proposals/summary'), api('GET', '/calendar/conflicts'), api('GET', '/nonni/plans')]);
   state.review = {
     proposals: summary.status === 'fulfilled' ? summary.value.pending : state.review.proposals,
     stale: summary.status === 'fulfilled' ? summary.value.stale : state.review.stale,
     conflicts: conflicts.status === 'fulfilled' ? conflicts.value.length : state.review.conflicts,
+    plans: plans.status === 'fulfilled' ? plans.value.length : state.review.plans,
   };
 }
 
