@@ -12,6 +12,7 @@ export function render() {
     <div class="more-links">
       ${link('#famiglia', 'Famiglia', 'Chi fa cosa: impegni e attività di ciascuno.')}
       ${link('#impostazioni', 'Impostazioni', 'Familiari, categorie, email da ignorare, Telegram e Google.')}
+      ${link('#nonni', 'Pagina dei nonni', 'Anteprima della settimana che vedono i nonni sul loro telefono.')}
     </div>
     <section class="panel password-box">
       ${sectionHead('Cambia password')}

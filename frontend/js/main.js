@@ -24,10 +24,11 @@ const ROUTES = {
   impostazioni: { label: 'Impostazioni', view: impostazioni },
   controllare: { label: 'Da controllare', view: controllare },
   altro: { label: 'Altro', view: altro },
+  nonni: { label: 'Pagina dei nonni', view: nonni },
 };
 /** Le cinque voci del menu; le altre rotte accendono la voce da cui si raggiungono. */
 const NAV = [['oggi', 'Oggi'], ['calendario', 'Calendario'], ['attivita', 'Da fare'], ['archivio', 'Costi'], ['altro', 'Altro']];
-const NAV_OF = { spesa: 'attivita', famiglia: 'altro', impostazioni: 'altro', controllare: 'oggi' };
+const NAV_OF = { spesa: 'attivita', famiglia: 'altro', impostazioni: 'altro', controllare: 'oggi', nonni: 'altro' };
 const SYNC_INTERVAL_MS = 30_000;
 
 let startupError = null;

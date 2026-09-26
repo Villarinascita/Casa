@@ -39,7 +39,7 @@ export function render() {
 
     ${state.me?.role === 'admin' ? html`<section class="module">
       ${sectionHead('Pagina dei nonni')}
-      <p>I nonni entrano con il loro utente e vedono solo «Questa settimana»: gli appuntamenti e le attività assegnati a loro («Chi se ne occupa»). L'accesso resta ricordato sei mesi.</p>
+      <p>I nonni entrano con il loro utente e vedono solo «Questa settimana»: gli appuntamenti e le attività assegnati a loro («Chi se ne occupa»). L'accesso resta ricordato sei mesi. <a href="#nonni">Vedi la pagina come la vedono loro →</a></p>
       <form id="grandparent-members">
         <div class="checks">${state.members.filter((m) => !m.archived).map((m) => html`<label class="setting-check"><input type="checkbox" name="grandparent" value="${m.id}" ${(state.household?.grandparent_members || []).includes(m.id) ? 'checked' : ''}>${m.display_name}</label>`)}</div>
         <button type="submit" class="primary">Salva chi sono i nonni</button>

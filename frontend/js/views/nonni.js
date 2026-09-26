@@ -53,7 +53,9 @@ export function render() {
       ${current ? '' : html`<button type="button" class="nonni-nav" data-week="today">Torna a oggi</button>`}
       <button type="button" class="nonni-nav" data-week="next">Settimana dopo ▶</button>
     </nav>
-    <p class="nonni-foot">Accesso come ${state.me?.login}. <button type="button" class="nonni-exit">Esci</button></p>
+    ${state.me?.role === 'nonno'
+      ? html`<p class="nonni-foot">Accesso come ${state.me?.login}. <button type="button" class="nonni-exit">Esci</button></p>`
+      : html`<p class="nonni-foot">Questa è l'anteprima di ciò che vedono i nonni. <a href="#impostazioni">Torna alle Impostazioni</a></p>`}
   </div>`;
 }
 
