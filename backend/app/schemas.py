@@ -4,6 +4,8 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, computed_field, field_validator, model_validator
 
+from .email_domains import normalize_domain
+
 Text = lambda n: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=n)]  # noqa: E731
 OptText = lambda n: Annotated[str | None, StringConstraints(strip_whitespace=True, max_length=n)]  # noqa: E731
 
@@ -46,17 +48,24 @@ class HouseholdOut(OutSchema):
     version: int
     areas: list[str]
     bill_categories: list[str]
+    blocked_email_domains: list[str]
 
 
 class HouseholdPatch(Schema):
     name: Text(120) | None = None
     areas: list[Text(60)] | None = Field(default=None, max_length=30)
     bill_categories: list[Text(60)] | None = Field(default=None, max_length=30)
+    blocked_email_domains: list[str] | None = Field(default=None, max_length=100)
 
     @field_validator("areas", "bill_categories")
     @classmethod
     def _unique_list(cls, value):
         return None if value is None else list(dict.fromkeys(value))
+
+    @field_validator("blocked_email_domains")
+    @classmethod
+    def _valid_domains(cls, value):
+        return None if value is None else list(dict.fromkeys(normalize_domain(item) for item in value))
 
 
 class MeOut(BaseModel):

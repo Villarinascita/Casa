@@ -17,7 +17,8 @@ def household_out(household: Household) -> HouseholdOut:
     settings = household.settings or {}
     return HouseholdOut(id=household.id, name=household.name, timezone=household.timezone,
                         version=household.version, areas=list(settings.get("areas", [])),
-                        bill_categories=list(settings.get("bill_categories", DEFAULT_BILL_CATEGORIES)))
+                        bill_categories=list(settings.get("bill_categories", DEFAULT_BILL_CATEGORIES)),
+                        blocked_email_domains=list(settings.get("blocked_email_domains", [])))
 
 
 def me_out(db: Session, ctx: Ctx) -> MeOut:
@@ -72,5 +73,7 @@ def update_household(data: HouseholdPatch, ctx: Ctx = Depends(current), db: Sess
         household.settings = {**(household.settings or {}), "areas": data.areas}
     if data.bill_categories is not None:
         household.settings = {**(household.settings or {}), "bill_categories": data.bill_categories}
+    if data.blocked_email_domains is not None:
+        household.settings = {**(household.settings or {}), "blocked_email_domains": data.blocked_email_domains}
     commit(db)
     return household_out(household)

@@ -200,3 +200,21 @@ def test_bill_categories_famiglia(luca):
     updated = luca.patch("/api/v1/household", json={"bill_categories": ["Bollette", "Salute", "Bollette"]},
                          headers={"If-Match": str(household["version"])}).json()
     assert updated["bill_categories"] == ["Bollette", "Salute"]
+
+
+def test_domini_bloccati_normalizzati(luca):
+    household = luca.get("/api/v1/household").json()
+    assert household["blocked_email_domains"] == []
+    updated = luca.patch("/api/v1/household",
+                         json={"blocked_email_domains": [" Newsletter.COM ", "newsletter.com"]},
+                         headers={"If-Match": str(household["version"])})
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["blocked_email_domains"] == ["newsletter.com"]
+
+
+def test_domini_bloccati_rifiuta_valori_non_validi(luca):
+    household = luca.get("/api/v1/household").json()
+    for bad in ["tizio@gmail.com", "localhost", "news letter.com"]:
+        response = luca.patch("/api/v1/household", json={"blocked_email_domains": [bad]},
+                              headers={"If-Match": str(household["version"])})
+        assert response.status_code == 422, bad
