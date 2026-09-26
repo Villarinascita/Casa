@@ -11,9 +11,10 @@ from sqlalchemy.orm import Session
 from ..crud import audit, check_version, commit, get_owned
 from ..db import get_db
 from ..errors import ApiError
-from ..models import Event, Proposal, utcnow
+from ..models import Event, Proposal, Task, utcnow
 from ..schemas import ActionBatchIn, AssistantAction, EntityOut
 from ..security import Ctx, current
+from .. import habits
 from .assistant import create_actions
 
 router = APIRouter(prefix="/proposals", tags=["proposals"])
@@ -91,10 +92,14 @@ def review(proposal_id: str, data: ReviewIn, ctx: Ctx = Depends(current), db: Se
         created = create_actions(db, ctx, batch).created[0]
         proposal.target_id = created.id
         proposal.status = "accepted"
-        if proposal.kind == "event":
-            db.get(Event, created.id).source = "gmail"
+        if proposal.kind in ("event", "task"):
+            target = db.get(Event if proposal.kind == "event" else Task, created.id)
+            target.source, target.source_sender = "gmail", proposal.sender
     else:
         proposal.status = "rejected"
+    title = proposal.data.get("title") or proposal.data.get("label") or ""
+    habits.record(db, ctx.household_id, proposal.kind, title, proposal.sender,
+                  "kept" if proposal.status == "accepted" else "discarded", proposal.target_id or proposal.id)
     audit(db, ctx, "review", proposal, {"status": proposal.status, "target_id": proposal.target_id})
     commit(db)
     return proposal

@@ -14,6 +14,7 @@ from .config import settings
 from .db import SessionLocal
 from .email_cleanup import run_domain_cleanups
 from .email_notices import dispatch_email_creation_notices
+from . import habits
 from .email_promotions import dispatch_promo_summaries
 from .gmail_sync import sync_gmail
 from .google import GoogleService
@@ -38,10 +39,13 @@ def run_google_once(db: Session, service: GoogleService, hermes_email: HermesCli
                 categories = list((household.settings or {}).get("bill_categories", DEFAULT_BILL_CATEGORIES))
                 household_settings = household.settings or {}
                 blocked = list(household_settings.get("blocked_email_domains", []))
+                learned = habits.examples(db, household.id)
                 sync_gmail(db, connection, service,
                            lambda text: hermes_email.analyze_email(
-                               text, timezone_name, settings.hermes_email_model, categories),
+                               text, timezone_name, settings.hermes_email_model, categories, examples=learned),
                            timezone_name, now, blocked_domains=blocked,
+                           judge=lambda title, existing: hermes_email.same_event(
+                               title, existing, settings.hermes_email_model),
                            auto_trash_promotions=bool(household_settings.get("auto_trash_promotions", True)),
                            kept_senders=list(household_settings.get("kept_email_senders", [])))
         except Exception as exc:

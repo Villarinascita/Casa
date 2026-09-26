@@ -136,6 +136,7 @@ class Event(HouseholdEntity, Base):
     notes: Mapped[str | None] = mapped_column(Text)
     member_id: Mapped[str | None] = mapped_column(ForeignKey("members.id"))
     source: Mapped[str] = mapped_column(String(40), default="manual")
+    source_sender: Mapped[str | None] = mapped_column(String(320))
 
     __table_args__ = (
         CheckConstraint(
@@ -162,6 +163,8 @@ class Task(HouseholdEntity, Base):
     status: Mapped[str] = mapped_column(String(10), default="open")
     completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     completed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
+    source: Mapped[str] = mapped_column(String(40), default="manual", server_default="manual")
+    source_sender: Mapped[str | None] = mapped_column(String(320))
 
     __table_args__ = (
         CheckConstraint("status IN ('open', 'done')", name="ck_tasks_status"),
@@ -388,6 +391,24 @@ class EmailAutoTrash(Base):
     subject: Mapped[str] = mapped_column(String(500), default="")
     trashed_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     reported_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+
+class EmailFeedback(Base):
+    """Ciò che la famiglia ha tenuto o scartato tra quanto Hermes ha preso dalle email:
+    esempi per le analisi successive e regola dei mittenti scartati sempre."""
+
+    __tablename__ = "email_feedback"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(10))
+    title: Mapped[str] = mapped_column(String(180))
+    sender: Mapped[str | None] = mapped_column(String(320))
+    verdict: Mapped[str] = mapped_column(String(10))
+    entity_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+    __table_args__ = (CheckConstraint("verdict IN ('kept', 'discarded')", name="ck_email_feedback_verdict"),)
 
 
 class CalendarEventLink(Base):

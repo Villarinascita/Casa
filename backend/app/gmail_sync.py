@@ -7,16 +7,17 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from pydantic import ValidationError
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from . import habits
+from .dedup import find_same_event, find_same_task
 from .email_cleanup import TRASH_PERMISSION_MESSAGE, TrashNotPermitted, trash_message
 from .email_domains import is_blocked_sender
 from .email_promotions import is_bulk_mail, is_promotion_to_trash, trashed_sender
 from .hermes_client import HermesInvalidResponse
-from .models import (Bill, EmailAutoTrash, EmailCreationNotice, EmailProcessed, Event, GoogleConnection,
-                     Proposal, Task)
+from .models import Bill, EmailAutoTrash, EmailCreationNotice, EmailProcessed, Event, GoogleConnection, Proposal
 from .routers.assistant import ACTION_TYPES
 from .schemas import ActionBatchIn, BillIn
 
@@ -58,24 +59,12 @@ def _is_stale(model, obj, now: datetime) -> bool:
     return bool(reference and reference < cutoff)
 
 
-def _already_there(db: Session, household_id: str, model, data: dict) -> bool:
-    """Stesso appuntamento (titolo e inizio) o stessa attività aperta già presenti: la stessa
-    comunicazione arriva spesso in più email e non va duplicata."""
-    title = (data.get("title") or "").strip().lower()
-    if model is Event:
-        when = (Event.start_date == data.get("start_date")) if data.get("all_day") else (Event.start_at == data.get("start_at"))
-        query = select(Event.id).where(Event.household_id == household_id, Event.deleted_at.is_(None),
-                                       func.lower(Event.title) == title, when)
-    else:
-        query = select(Task.id).where(Task.household_id == household_id, Task.deleted_at.is_(None),
-                                      Task.status == "open", func.lower(Task.title) == title)
-    return db.scalar(query.limit(1)) is not None
-
-
 def ingest_message(db: Session, connection: GoogleConnection, message: dict,
                    analyze: Callable[[str], dict], timezone_name: str, now: datetime | None = None,
                    blocked_domains: Sequence[str] = (), trash: Callable[[str], bool | None] | None = None,
-                   auto_trash_promotions: bool = False, kept_senders: Sequence[str] = ()) -> int:
+                   auto_trash_promotions: bool = False, kept_senders: Sequence[str] = (),
+                   judge: Callable[[str, list[str]], int | None] | None = None) -> int:
+    """`judge(nuovo, esistenti)`: Hermes decide nei casi dubbi se un appuntamento è già presente."""
     now = now or datetime.now(timezone.utc)
     message_id = message["id"]
     seen = db.scalar(select(EmailProcessed).where(EmailProcessed.connection_id == connection.id,
@@ -110,28 +99,46 @@ def ingest_message(db: Session, connection: GoogleConnection, message: dict,
         # Posta di massa (newsletter, promozioni): un appuntamento o un'attività non si crea mai da
         # solo ma passa da «Da controllare»; se Hermes la giudica pura pubblicità non si propone nemmeno.
         bulk = is_bulk_mail(message, headers)
+        # Mittente di cui la famiglia ha sempre scartato tutto: niente appuntamenti né attività.
+        unwanted = habits.always_discarded(db, connection.household_id, sender)
+        tz = ZoneInfo(timezone_name)
+        proposal_index = 0
+
+        def propose(kind: str, data: dict, note: str | None = None) -> None:
+            nonlocal proposal_index
+            db.add(Proposal(household_id=connection.household_id, created_by=connection.user_id,
+                            connection_id=connection.id, message_id=message_id,
+                            thread_id=message.get("threadId", ""), item_index=proposal_index,
+                            sender=sender, subject=subject, snippet=(note or snippet)[:500],
+                            kind=kind, data=data))
+            # Forza subito il flush: un vincolo di unicità violato emerge qui (già protetto
+            # dall'except sotto) invece che al commit finale fuori da questo blocco.
+            db.flush()
+            proposal_index += 1
+
         if batch:
-            proposal_index = 0
             for action in batch.actions:
                 schema, model = ACTION_TYPES[action.kind]
                 validated = schema.model_validate(action.data)
-                if promo and action.kind != "shopping":
+                if action.kind != "shopping" and (promo or unwanted):
                     continue
                 if action.kind == "shopping" or bulk:
-                    data = validated.model_dump(mode="json")
-                    db.add(Proposal(household_id=connection.household_id, created_by=connection.user_id,
-                                    connection_id=connection.id, message_id=message_id,
-                                    thread_id=message.get("threadId", ""), item_index=proposal_index,
-                                    sender=sender, subject=subject, snippet=snippet,
-                                    kind=action.kind, data=data))
-                    # Come per l'altro ramo: forza subito il flush, così un vincolo di
-                    # unicità violato emerge qui (già protetto dall'except sotto) invece
-                    # che al commit finale fuori da questo blocco.
-                    db.flush()
-                    proposal_index += 1
+                    propose(action.kind, validated.model_dump(mode="json"))
                 else:
                     data = validated.model_dump()
-                    if _already_there(db, connection.household_id, model, data):
+                    if model is Event:
+                        same, other_time = find_same_event(db, connection.household_id, data, tz, judge)
+                        if same is not None and not other_time:
+                            continue  # già in calendario, anche se scritto diversamente
+                        if same is not None:
+                            # Stesso impegno a un orario diverso: decide la famiglia.
+                            existing = same.start_at.astimezone(tz).strftime("%H:%M")
+                            propose("event", validated.model_dump(mode="json"),
+                                    f"In calendario c'è già «{same.title}» alle {existing}: "
+                                    "questa email indica un orario diverso.")
+                            created_count += 1
+                            continue
+                    elif find_same_task(db, connection.household_id, data["title"]):
                         continue
                     # Un appuntamento/attività estratti da email non devono mai assegnarsi
                     # automaticamente a un familiare: un member_id inventato dal modello farebbe
@@ -139,8 +146,8 @@ def ingest_message(db: Session, connection: GoogleConnection, message: dict,
                     # messaggio (vedi finding §1 revisione finale).
                     data.pop("member_id", None)
                     obj = model(household_id=connection.household_id, created_by=connection.user_id, **data)
-                    if model is Event:
-                        obj.source = "gmail"
+                    obj.source = "gmail"
+                    obj.source_sender = sender or None
                     db.add(obj)
                     db.flush()
                     if not _is_stale(model, obj, now):
@@ -201,7 +208,7 @@ def ingest_message(db: Session, connection: GoogleConnection, message: dict,
 def sync_gmail(db: Session, connection: GoogleConnection, service,
                analyze: Callable[[str], dict], timezone_name: str, now: datetime | None = None,
                blocked_domains: Sequence[str] = (), auto_trash_promotions: bool = False,
-               kept_senders: Sequence[str] = ()) -> int:
+               kept_senders: Sequence[str] = (), judge: Callable[[str, list[str]], int | None] | None = None) -> int:
     """Scorre i messaggi che corrispondono ai filtri; riprende dalle pagine incomplete."""
     now = now or datetime.now(timezone.utc)
     since = connection.last_gmail_sync_at - timedelta(days=1) if connection.last_gmail_sync_at else now - timedelta(days=365)
@@ -228,7 +235,8 @@ def sync_gmail(db: Session, connection: GoogleConnection, service,
             {"format": "full"})
         created += ingest_message(db, connection, message, analyze, timezone_name, now,
                                   blocked_domains=blocked_domains, trash=trash,
-                                  auto_trash_promotions=auto_trash_promotions, kept_senders=kept_senders)
+                                  auto_trash_promotions=auto_trash_promotions, kept_senders=kept_senders,
+                                  judge=judge)
     connection.gmail_page_token = page.get("nextPageToken")
     if not connection.gmail_page_token:
         connection.last_gmail_sync_at = now

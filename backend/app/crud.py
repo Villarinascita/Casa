@@ -14,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.exc import StaleDataError
 
+from . import habits
 from .db import get_db
 from .errors import ApiError, validation_error
 from .models import AuditEntry, IdempotencyRecord, Member, utcnow
@@ -195,6 +196,7 @@ def build_router(prefix: str, res: Resource, *, custom_list: bool = False) -> AP
         check_version(obj, if_match)
         obj.deleted_at = utcnow()
         audit(db, ctx, "delete", obj)
+        habits.on_delete(db, obj)
         commit(db)
         return obj
 
@@ -206,6 +208,7 @@ def build_router(prefix: str, res: Resource, *, custom_list: bool = False) -> AP
         if obj.deleted_at is not None:
             obj.deleted_at = None
             audit(db, ctx, "restore", obj)
+            habits.on_restore(db, obj)
             commit(db)
         return obj
 
