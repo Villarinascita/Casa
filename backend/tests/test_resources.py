@@ -218,3 +218,33 @@ def test_domini_bloccati_rifiuta_valori_non_validi(luca):
         response = luca.patch("/api/v1/household", json={"blocked_email_domains": [bad]},
                               headers={"If-Match": str(household["version"])})
         assert response.status_code == 422, bad
+
+
+from sqlalchemy import select
+
+from app.models import GoogleConnection, User
+
+
+def _connect_google(db_factory, seed):
+    with db_factory() as db:
+        user = db.scalar(select(User).where(User.login == "luca"))
+        db.add(GoogleConnection(household_id=seed["Rossi"], user_id=user.id, email="luca@gmail.com",
+                                refresh_token_encrypted="x"))
+        db.commit()
+
+
+def test_bloccare_un_dominio_avvia_la_pulizia_solo_per_i_nuovi(luca, db_factory, seed):
+    _connect_google(db_factory, seed)
+    household = luca.get("/api/v1/household").json()
+    first = luca.patch("/api/v1/household", json={"blocked_email_domains": ["a.com"]},
+                       headers={"If-Match": str(household["version"])}).json()
+    second = luca.patch("/api/v1/household", json={"blocked_email_domains": ["a.com", "b.com"]},
+                        headers={"If-Match": str(first["version"])}).json()
+    cleanups = luca.get("/api/v1/household/email-cleanups").json()
+    assert sorted(c["domain"] for c in cleanups) == ["a.com", "b.com"]
+    assert all(c["status"] == "running" and c["trashed_count"] == 0 for c in cleanups)
+    luca.patch("/api/v1/household", json={"blocked_email_domains": ["b.com"]},
+               headers={"If-Match": str(second["version"])})
+    by_domain = {c["domain"]: c for c in luca.get("/api/v1/household/email-cleanups").json()}
+    assert by_domain["a.com"]["status"] == "done" and by_domain["a.com"]["completed_at"]
+    assert by_domain["b.com"]["status"] == "running"

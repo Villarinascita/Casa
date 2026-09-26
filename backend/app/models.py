@@ -354,6 +354,24 @@ class EmailCreationNotice(Base):
     )
 
 
+class EmailDomainCleanup(Base):
+    """Pulizia retroattiva (cestino Gmail) delle email già in casella da un dominio appena bloccato."""
+
+    __tablename__ = "email_domain_cleanups"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id"), index=True)
+    connection_id: Mapped[str] = mapped_column(ForeignKey("google_connections.id"), index=True)
+    domain: Mapped[str] = mapped_column(String(253))
+    status: Mapped[str] = mapped_column(String(10), default="running")
+    page_token: Mapped[str | None] = mapped_column(String(500))
+    trashed_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+    __table_args__ = (CheckConstraint("status IN ('running', 'done')", name="ck_email_domain_cleanups_status"),)
+
+
 class CalendarEventLink(Base):
     __tablename__ = "calendar_event_links"
 

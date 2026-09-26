@@ -75,6 +75,14 @@ class MeOut(BaseModel):
     household: HouseholdOut
 
 
+class EmailCleanupOut(OutSchema):
+    domain: str
+    status: str
+    trashed_count: int
+    created_at: datetime
+    completed_at: datetime | None
+
+
 # --- Familiari -------------------------------------------------------------------------------
 
 

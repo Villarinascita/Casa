@@ -5,8 +5,9 @@ from sqlalchemy.orm import Session
 from ..crud import check_version, commit
 from ..db import get_db
 from ..errors import ApiError
-from ..models import Household, HouseholdUser, User
-from ..schemas import DEFAULT_BILL_CATEGORIES, HouseholdOut, HouseholdPatch, LoginIn, MeOut
+from ..email_cleanup import queue_domain_cleanups
+from ..models import EmailDomainCleanup, Household, HouseholdUser, User
+from ..schemas import DEFAULT_BILL_CATEGORIES, EmailCleanupOut, HouseholdOut, HouseholdPatch, LoginIn, MeOut
 from ..security import (Ctx, current, end_session, hash_password, hasher, login_limiter, start_session,
                         verify_password)
 
@@ -74,6 +75,14 @@ def update_household(data: HouseholdPatch, ctx: Ctx = Depends(current), db: Sess
     if data.bill_categories is not None:
         household.settings = {**(household.settings or {}), "bill_categories": data.bill_categories}
     if data.blocked_email_domains is not None:
+        previous = list((household.settings or {}).get("blocked_email_domains", []))
         household.settings = {**(household.settings or {}), "blocked_email_domains": data.blocked_email_domains}
+        queue_domain_cleanups(db, household.id, previous, data.blocked_email_domains)
     commit(db)
     return household_out(household)
+
+
+@router.get("/household/email-cleanups", response_model=list[EmailCleanupOut])
+def list_email_cleanups(ctx: Ctx = Depends(current), db: Session = Depends(get_db)):
+    return db.scalars(select(EmailDomainCleanup).where(EmailDomainCleanup.household_id == ctx.household_id)
+                      .order_by(EmailDomainCleanup.created_at.desc())).all()
