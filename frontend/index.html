@@ -8,6 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg">
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="layout.css">
   <script type="module" src="js/main.js"></script>
 </head>
 <body>
@@ -24,6 +25,9 @@
         <span id="sync" class="sync"></span>
       </div>
       <button id="add" class="primary" type="button">＋ Aggiungi</button>
+      <a id="more" href="#altro" aria-label="Altro: famiglia e impostazioni">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>
+      </a>
     </header>
     <div id="legacy-banner" class="banner" hidden>
       <span>Su questo dispositivo ci sono dati della prima versione, non ancora condivisi.</span>
@@ -33,6 +37,7 @@
     <section id="screen" tabindex="-1"></section>
     <p id="status" class="visually-hidden" role="status" aria-live="polite"></p>
   </main>
+  <nav id="tabbar" aria-label="Navigazione rapida"></nav>
 
   <dialog id="editor" aria-labelledby="editor-title">
     <form id="entry" novalidate>
@@ -45,6 +50,7 @@
         <label><input type="radio" name="type" value="event" checked><span>Appuntamento</span></label>
         <label><input type="radio" name="type" value="task"><span>Attività</span></label>
         <label><input type="radio" name="type" value="shopping"><span>Spesa</span></label>
+        <label><input type="radio" name="type" value="bill"><span>Costo</span></label>
       </fieldset>
       <label><span id="title-label">Cosa?</span><input name="title" required maxlength="180"></label>
       <div class="fields" data-for="event">
@@ -64,6 +70,12 @@
       <div data-for="shopping">
         <label><span>Quantità</span><input name="quantity" maxlength="40" placeholder="Es. 2 confezioni"></label>
       </div>
+      <div class="fields" data-for="bill">
+        <label><span>Categoria</span><select name="category"></select></label>
+        <label><span>Fornitore (facoltativo)</span><input name="supplier" maxlength="180" placeholder="Es. Octopus Energy"></label>
+        <label><span>Importo in € (facoltativo)</span><input name="amount" type="number" step="0.01" min="0" inputmode="decimal"></label>
+        <label><span>Scadenza (facoltativa)</span><input name="bill_due" type="date"></label>
+      </div>
       <div class="fields" data-for="event task">
         <label><span>Chi se ne occupa</span><select name="member_id"></select></label>
         <label data-for="event"><span>Luogo</span><input name="location" maxlength="300" placeholder="Es. piscina comunale"></label>
@@ -74,6 +86,7 @@
       <p class="hint" data-for="event">Ricorrenze e promemoria automatici arriveranno nelle prossime versioni.</p>
       <p id="form-error" class="form-error" role="alert"></p>
       <div class="dialog-actions">
+        <button type="button" id="editor-delete" class="danger" hidden>Elimina</button>
         <button type="submit" class="primary">Salva</button>
       </div>
     </form>

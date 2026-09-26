@@ -1,6 +1,6 @@
 import { html, toast } from '../dom.js';
 import { formatDay } from '../dates.js';
-import { create, remove, state, update } from '../store.js';
+import { state, update } from '../store.js';
 import { empty, heading, sectionHead } from './common.js';
 
 const STATE_LABELS = { da_pagare: 'Da pagare', addebito_previsto: 'Addebito previsto', pagato: 'Pagato' };
@@ -13,11 +13,11 @@ function amountLabel(bill) {
 function billRow(bill) {
   return html`<div class="item ${bill.payment_state === 'pagato' ? 'done' : ''}" data-bill="${bill.id}">
     <span class="time-pill">${amountLabel(bill)}</span>
-    <span class="item-title">${bill.title}</span>
-    <span class="meta">${[bill.supplier, bill.due_date ? `Scade ${formatDay(bill.due_date)}` : null,
-      STATE_LABELS[bill.payment_state]].filter(Boolean).join(' · ')}</span>
-    <button type="button" data-action="cycle-state" aria-label="Cambia stato">${STATE_LABELS[bill.payment_state]} →</button>
-    <button type="button" class="delete" data-action="delete-bill" aria-label="Elimina ${bill.title}">Elimina</button>
+    <button type="button" class="item-open" data-action="edit" data-kind="bill" data-id="${bill.id}">
+      <span class="item-title">${bill.title}</span>
+      <span class="meta">${[bill.supplier, bill.due_date ? `Scade ${formatDay(bill.due_date)}` : null].filter(Boolean).join(' · ')}</span>
+    </button>
+    <button type="button" data-action="cycle-state" aria-label="${bill.title}: ${STATE_LABELS[bill.payment_state]}, tocca per cambiare stato">${STATE_LABELS[bill.payment_state]} →</button>
   </div>`;
 }
 
@@ -37,64 +37,24 @@ export function render() {
   if (others.length) byCategory.push({ category: 'Altro', bills: others });
 
   return html`
-    ${heading('Le informazioni di casa', 'Costi da pagare.',
-      'Bollette e costi trovati nelle email, più quelli che aggiungi tu. Nessuno viene mai segnato pagato da solo.')}
+    ${heading('Le spese di casa', 'Costi da pagare.',
+      'Bollette e costi trovati nelle email, più quelli che aggiungi tu con «+». Nessuno viene mai segnato pagato da solo.')}
 
     <section class="module">
-      <p class="intro">Totale da pagare: <strong>${totalDue().toFixed(2)} €</strong></p>
+      ${sectionHead(`Totale da pagare: ${totalDue().toFixed(2)} €`, html`<button type="button" class="primary" data-action="add" data-type="bill">＋ Nuovo costo</button>`)}
     </section>
 
     ${state.bills.length ? byCategory.map((group) => html`<section class="module">
       ${sectionHead(group.category)}
       ${group.bills.map(billRow)}
     </section>`) : html`<section class="module">${empty('Nessun costo registrato. Arriveranno dalle email, oppure aggiungine uno a mano.')}</section>`}
-
-    <section class="module">
-      ${sectionHead('Aggiungi un costo a mano')}
-      <form id="add-bill">
-        <label><span>Categoria</span>
-          <select name="category">${categories.map((c) => html`<option value="${c}">${c}</option>`)}</select>
-        </label>
-        <label><span>Titolo</span><input name="title" required maxlength="180" placeholder="Es. Bolletta gas"></label>
-        <label><span>Fornitore</span><input name="supplier" maxlength="180" placeholder="Facoltativo"></label>
-        <label><span>Importo (€)</span><input name="amount" type="number" step="0.01" min="0" placeholder="Facoltativo"></label>
-        <label><span>Scadenza</span><input name="due_date" type="date"></label>
-        <button type="submit" class="primary">Aggiungi</button>
-      </form>
-    </section>`;
+`;
 }
 
-export function mount(root) {
-  const form = root.querySelector('#add-bill');
-  form?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const el = event.target.elements;
-    try {
-      await create('bill', {
-        category: el.category.value,
-        title: el.title.value.trim(),
-        supplier: el.supplier.value.trim() || null,
-        amount: el.amount.value === '' ? null : el.amount.value,
-        due_date: el.due_date.value || null,
-      });
-      form.reset();
-    } catch (err) { toast(err.message); }
-  });
-
-  root.querySelectorAll('[data-bill]').forEach((row) => {
-    const bill = () => state.bills.find((b) => b.id === row.dataset.bill);
-    row.querySelector('[data-action="cycle-state"]')?.addEventListener('click', async () => {
-      const current = bill();
-      try {
-        await update('bill', current, { payment_state: NEXT_STATE[current.payment_state] });
-      } catch (err) { toast(err.message); }
-    });
-    row.querySelector('[data-action="delete-bill"]')?.addEventListener('click', async () => {
-      const current = bill();
-      try {
-        const undo = await remove('bill', current);
-        toast(`Eliminato: ${current.title}.`, { label: 'Annulla', run: () => undo().catch((e) => toast(e.message)) });
-      } catch (err) { toast(err.message); }
-    });
-  });
+/** Il pulsante di stato di una riga: gli altri tocchi (apri la scheda, +) li gestisce main.js. */
+export function onAction(el) {
+  if (el.dataset.action !== 'cycle-state') return false;
+  const current = state.bills.find((b) => b.id === el.closest('[data-bill]').dataset.bill);
+  if (current) update('bill', current, { payment_state: NEXT_STATE[current.payment_state] }).catch((err) => toast(err.message));
+  return true;
 }

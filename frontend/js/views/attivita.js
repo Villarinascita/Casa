@@ -1,7 +1,7 @@
 import { html } from '../dom.js';
 import { today } from '../dates.js';
 import { state } from '../store.js';
-import { empty, heading, sectionHead, taskRow } from './common.js';
+import { empty, heading, sectionHead, taskRow, todoTabs } from './common.js';
 
 const group = (title, tasks) => (tasks.length ? html`<h3>${title} <span class="count">${tasks.length}</span></h3>${tasks.map(taskRow)}` : '');
 
@@ -13,6 +13,7 @@ export function render() {
     .sort((a, b) => (b.completed_at || '').localeCompare(a.completed_at || ''))
     .slice(0, 30);
   return html`
+    ${todoTabs('attivita')}
     ${heading('Una cosa alla volta', 'Le cose da fare.', 'Assegna un responsabile e segna ciò che avete completato.')}
     ${sectionHead('Aperte', html`<button type="button" class="primary" data-action="add" data-type="task">＋ Nuova attività</button>`)}
     ${open.length ? html`

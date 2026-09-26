@@ -1,0 +1,217 @@
+/* Insieme fase 1: menu a 5 voci, barra in basso su telefono, Oggi a sezioni, Da controllare.
+   Caricato dopo styles.css (vedi docs/superpowers/specs/2026-09-26-frontend-menu-oggi-design.md). */
+
+/* --- Menu ------------------------------------------------------------------------------- */
+
+.brand::after { display: none; }
+nav a[href='#archivio'] { --nav-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round'%3E%3Crect x='3' y='6' width='18' height='13' rx='3'/%3E%3Cpath d='M3 10h18M7 15h4'/%3E%3C/svg%3E"); }
+nav a[href='#altro'] { --nav-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round'%3E%3Ccircle cx='12' cy='8' r='4'/%3E%3Cpath d='M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6'/%3E%3C/svg%3E"); }
+nav a { font-size: 15px; }
+.nav-badge {
+  margin-left: auto;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 7px;
+  border-radius: 13px;
+  background: var(--green);
+  color: #1b1d2a;
+  font-size: 13px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+nav a.active .nav-badge { background: #1b1d2a; color: var(--green); }
+
+#more, #tabbar { display: none; }
+
+/* --- Testi più leggibili ------------------------------------------------------------------ */
+
+.meta { font-size: 14px; }
+.item-title { font-size: 16px; }
+.intro { font-size: 15px; }
+.eyebrow { font-size: 11px; }
+
+/* --- Oggi -------------------------------------------------------------------------------- */
+
+.review-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 8px 0 24px;
+  padding: 16px 18px;
+  border-radius: var(--radius);
+  background: var(--green);
+  color: #1b1d2a;
+  text-decoration: none;
+  font-size: 20px;
+}
+.review-banner:hover { background: var(--green-dark); }
+.review-count {
+  min-width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  background: #1b1d2a;
+  color: var(--green);
+  font-size: 20px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.review-text { flex: 1; display: grid; gap: 2px; }
+.review-text strong { font-size: 17px; }
+.review-text span { font-size: 14px; }
+
+.today-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+.panel { background: var(--paper-light); padding: 20px; border: 1px solid var(--line); border-radius: var(--radius); min-width: 0; }
+.panel .section-head { flex-wrap: nowrap; }
+.head-note { font-size: 13px; color: var(--muted); }
+.past { opacity: .55; }
+.now-line { position: relative; height: 2px; margin: 14px 0; background: var(--green); }
+.now-line span {
+  position: absolute;
+  left: 0;
+  top: -11px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--green);
+  color: #1b1d2a;
+  font-size: 12px;
+  font-weight: 700;
+}
+.deadline .amount { flex: none; font-size: 16px; font-variant-numeric: tabular-nums; }
+.deadline.late { margin: 6px 0; padding: 4px 12px; border-radius: 14px; border: 0; background: var(--warn-bg); }
+.deadline.late .meta, .deadline.late .amount { color: var(--warn); }
+.week-total { display: block; padding: 13px 0; margin-top: 4px; font-size: 15px; font-weight: 600; text-decoration: none; }
+.mini-tiles { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.mini-tile { display: grid; gap: 2px; padding: 14px 16px; border-radius: 16px; text-decoration: none; }
+.mini-tile strong { font-size: 18px; }
+.mini-tile span { font-size: 14px; }
+.mini-tile.shopping { background: #1c3a36; color: #9ff0d3; }
+.mini-tile.tomorrow { background: #1d3350; color: #a9dcff; }
+
+/* --- Da controllare ------------------------------------------------------------------------ */
+
+.filter-pills { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+.filter-pills button { border-radius: 23px; color: var(--ink); }
+.filter-pills button[aria-pressed='true'] { background: var(--green); border-color: var(--green); color: #1b1d2a; }
+.review-list { display: grid; gap: 14px; max-width: 760px; }
+.review-card { display: grid; gap: 10px; padding: 18px; border-radius: var(--radius); background: var(--paper-light); border: 1px solid var(--line); }
+.review-card.stale { background: transparent; border-style: dashed; border-color: var(--field-line); }
+.review-kind { font-size: 12px; font-weight: 700; letter-spacing: .4px; color: var(--muted); overflow-wrap: anywhere; }
+.review-kind.shopping { color: #9ff0d3; }
+.review-kind.event { color: #8fd0ff; }
+.review-kind.task { color: #c8b3ff; }
+.review-title { font-size: 18px; line-height: 1.35; overflow-wrap: anywhere; }
+.review-actions { display: flex; gap: 10px; }
+.review-actions button { flex: 1; min-height: 48px; font-size: 15px; }
+
+/* --- Da fare: schede Attività | Spesa ------------------------------------------------------ */
+
+.subtabs { display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 22px; border-radius: 16px; background: var(--paper-light); border: 1px solid var(--line); }
+.subtabs a { min-height: 44px; min-width: 110px; padding: 0 18px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; color: var(--ink); text-decoration: none; font-weight: 600; }
+.subtabs a.active { background: var(--green); color: #1b1d2a; }
+
+/* --- Altro ------------------------------------------------------------------------------- */
+
+.more-links { display: grid; gap: 12px; max-width: 620px; margin-bottom: 24px; }
+.more-link { display: grid; gap: 4px; padding: 18px 20px; border-radius: var(--radius); background: var(--paper-light); border: 1px solid var(--line); color: var(--ink); text-decoration: none; }
+.more-link strong { font-size: 18px; }
+.more-link span { font-size: 14px; color: var(--muted); }
+.more-link:hover { border-color: var(--green); }
+
+/* --- Scheda: «Elimina» a sinistra, «Salva» a destra ----------------------------------------- */
+
+.dialog-actions { justify-content: space-between; gap: 12px; }
+.dialog-actions .primary { margin-left: auto; }
+.danger { color: var(--warn); border-color: #67404c; }
+.danger:hover { background: var(--warn-bg); }
+.segmented span { padding-inline: 4px; }
+
+/* --- Tablet medio ------------------------------------------------------------------------ */
+
+@media (min-width: 851px) and (max-width: 1150px) {
+  .today-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* --- Telefono ---------------------------------------------------------------------------- */
+
+@media (max-width: 850px) {
+  body { grid-template-rows: auto 1fr; }
+  aside { padding: 12px 16px; }
+  aside nav { display: none; }
+  header { gap: 10px; }
+  #add { display: none; }
+  #more {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 46px;
+    height: 46px;
+    border-radius: 14px;
+    border: 1px solid var(--line);
+    background: var(--paper-light);
+    color: var(--ink);
+  }
+  main { padding-bottom: 120px; }
+  .today-grid { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .panel { padding: 16px; }
+  .review-banner { margin-bottom: 18px; }
+
+  #tabbar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 15;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    align-items: center;
+    margin: 0;
+    padding: 6px 6px calc(8px + env(safe-area-inset-bottom));
+    background: var(--paper-light);
+    border-top: 1px solid var(--line);
+  }
+  #tabbar a {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    min-height: 56px;
+    padding: 6px 2px;
+    border-radius: 12px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
+    position: relative;
+  }
+  #tabbar a::before { width: 24px; height: 24px; }
+  #tabbar a.active { background: transparent; color: var(--green); }
+  #tabbar .nav-badge { position: absolute; top: 0; right: calc(50% - 26px); min-width: 22px; height: 22px; font-size: 12px; margin: 0; }
+  #tabbar a.active .nav-badge { background: var(--green); color: #1b1d2a; }
+  #tabbar .tab-add {
+    justify-self: center;
+    width: 58px;
+    height: 58px;
+    margin-top: -26px;
+    padding: 0;
+    border: 0;
+    border-radius: 20px;
+    background: var(--green);
+    color: #1b1d2a;
+    font-size: 28px;
+    box-shadow: 0 8px 24px #05091480;
+  }
+  .toast { bottom: calc(96px + env(safe-area-inset-bottom)); }
+  .subtabs { display: flex; }
+  .subtabs a { flex: 1; min-width: 0; }
+  .segmented span { font-size: 12px; }
+}

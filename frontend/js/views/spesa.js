@@ -1,6 +1,6 @@
 import { $, html, toast, uid } from '../dom.js';
 import { clearCheckedShopping, create, state } from '../store.js';
-import { empty, heading, sectionHead, shoppingRow } from './common.js';
+import { empty, heading, sectionHead, shoppingRow, todoTabs } from './common.js';
 
 let idempotencyKey = uid();
 
@@ -8,6 +8,7 @@ export function render() {
   const toBuy = state.shopping.filter((s) => !s.checked);
   const inCart = state.shopping.filter((s) => s.checked);
   return html`
+    ${todoTabs('spesa')}
     ${heading('Una cosa alla volta', 'La lista della spesa.', 'Condivisa tra tutti: spunta i prodotti quando sono nel carrello.')}
     <form id="quick-shopping" class="quick-add" autocomplete="off">
       <label class="grow"><span>Prodotto</span><input id="quick-label" name="label" required maxlength="120" placeholder="Es. latte, pile AA"></label>

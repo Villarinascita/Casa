@@ -1,14 +1,16 @@
-// Finestra di inserimento e modifica: campi diversi per appuntamento, attività e spesa.
+// Finestra di inserimento e modifica: campi diversi per appuntamento, attività, spesa e costo.
 
 import { $, $$, html, toast, uid } from './dom.js';
 import { dayOfInstant, timeOf, toInstant, today } from './dates.js';
-import { activeMembers, create, memberById, state, update } from './store.js';
+import { activeMembers, create, memberById, remove, state, update } from './store.js';
 
 const TITLES = {
   event: ['Nuovo appuntamento', 'Modifica appuntamento'],
   task: ['Nuova attività', 'Modifica attività'],
   shopping: ['Aggiungi alla spesa', 'Modifica voce della spesa'],
+  bill: ['Nuovo costo', 'Modifica costo'],
 };
+const label = (entity) => entity.title || entity.label;
 
 let editing = null; // entità in modifica, null se nuova
 let idempotencyKey = null;
@@ -32,8 +34,10 @@ function syncFields() {
     event: 'Es. Nuoto, visita dal pediatra',
     task: 'Es. Chiamare il tecnico, rinnovare il bollo',
     shopping: 'Es. Latte, pile AA',
+    bill: 'Es. Bolletta gas, rata auto',
   }[type];
-  $('#title-label').textContent = type === 'shopping' ? 'Prodotto' : 'Cosa?';
+  $('#title-label').textContent = { shopping: 'Prodotto', bill: 'Titolo' }[type] || 'Cosa?';
+  $('#editor-delete').hidden = !editing;
 }
 
 function fillMembers(selectedId) {
@@ -42,6 +46,14 @@ function fillMembers(selectedId) {
   if (selected?.archived) members.push(selected);
   form().elements.member_id.innerHTML = String(html`<option value="">Da assegnare</option>${members.map(
     (m) => html`<option value="${m.id}" ${m.id === selectedId ? 'selected' : ''}>${m.display_name}${m.archived ? ' (archiviato)' : ''}</option>`,
+  )}`);
+}
+
+function fillCategories(selected) {
+  const categories = [...(state.household?.bill_categories || ['Altro'])];
+  if (selected && !categories.includes(selected)) categories.push(selected);
+  form().elements.category.innerHTML = String(html`${categories.map(
+    (c) => html`<option value="${c}" ${c === selected ? 'selected' : ''}>${c}</option>`,
   )}`);
 }
 
@@ -55,6 +67,7 @@ export function openEditor({ type = 'event', date, entity = null } = {}) {
   f.elements.type.value = type;
   $$('[name=type]', f).forEach((radio) => { radio.disabled = Boolean(entity); });
   fillMembers(entity?.member_id);
+  fillCategories(entity?.category);
 
   if (entity && type === 'event') {
     f.elements.title.value = entity.title;
@@ -75,6 +88,11 @@ export function openEditor({ type = 'event', date, entity = null } = {}) {
   } else if (entity && type === 'shopping') {
     f.elements.title.value = entity.label;
     f.elements.quantity.value = entity.quantity || '';
+  } else if (entity && type === 'bill') {
+    f.elements.title.value = entity.title;
+    f.elements.supplier.value = entity.supplier || '';
+    f.elements.amount.value = entity.amount ?? '';
+    f.elements.bill_due.value = entity.due_date || '';
   } else {
     f.elements.date.value = date || today();
     if (type === 'task' && date) f.elements.due_date.value = date;
@@ -94,6 +112,10 @@ function payload() {
   const title = f.title.value.trim();
   if (!title) return { error: 'Scrivi cosa vuoi ricordare.' };
   if (type === 'shopping') return { data: { label: title, quantity: f.quantity.value.trim() || null } };
+  if (type === 'bill') {
+    return { data: { title, category: f.category.value, supplier: f.supplier.value.trim() || null,
+      amount: f.amount.value === '' ? null : f.amount.value, due_date: f.bill_due.value || null } };
+  }
 
   const common = { title, member_id: f.member_id.value || null, notes: f.notes.value.trim() || null };
   if (type === 'task') {
@@ -148,9 +170,26 @@ async function submit(e) {
   }
 }
 
+/** «Elimina» sta nella scheda, non sulle righe: chiude, elimina e offre «Annulla». */
+async function deleteEditing() {
+  const entity = editing;
+  const type = currentType();
+  if (!entity) return;
+  if (!state.online) {
+    $('#form-error').textContent = 'Sei offline: riprova quando torna la connessione.';
+    return;
+  }
+  closeEditor();
+  try {
+    const undo = await remove(type, entity);
+    toast(`Eliminato: ${label(entity)}.`, { label: 'Annulla', run: () => undo().catch((err) => toast(err.message)) });
+  } catch (err) { toast(err.message); }
+}
+
 export function setupEditor() {
   const f = form();
   f.addEventListener('submit', submit);
+  $('#editor-delete').addEventListener('click', deleteEditing);
   f.addEventListener('change', (e) => {
     if (e.target.name === 'type' || e.target.name === 'all_day') syncFields();
   });

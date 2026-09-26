@@ -1,10 +1,12 @@
 import { $, announce, html, toast } from './dom.js';
 import { formatLongToday, msUntilMidnight } from './dates.js';
 import { openEditor, setupEditor } from './editor.js';
-import { find, loadSession, refresh, remove, setOnline, state, subscribe, update } from './store.js';
+import { find, loadSession, refresh, reviewCount, setOnline, state, subscribe, update } from './store.js';
+import * as altro from './views/altro.js';
 import * as archivio from './views/archivio.js';
 import * as attivita from './views/attivita.js';
 import * as calendario from './views/calendario.js';
+import * as controllare from './views/controllare.js';
 import * as famiglia from './views/famiglia.js';
 import * as impostazioni from './views/impostazioni.js';
 import * as loginView from './views/login.js';
@@ -19,7 +21,12 @@ const ROUTES = {
   famiglia: { label: 'Famiglia', view: famiglia },
   archivio: { label: 'Casa e documenti', view: archivio },
   impostazioni: { label: 'Impostazioni', view: impostazioni },
+  controllare: { label: 'Da controllare', view: controllare },
+  altro: { label: 'Altro', view: altro },
 };
+/** Le cinque voci del menu; le altre rotte accendono la voce da cui si raggiungono. */
+const NAV = [['oggi', 'Oggi'], ['calendario', 'Calendario'], ['attivita', 'Da fare'], ['archivio', 'Costi'], ['altro', 'Altro']];
+const NAV_OF = { spesa: 'attivita', famiglia: 'altro', impostazioni: 'altro', controllare: 'oggi' };
 const SYNC_INTERVAL_MS = 30_000;
 
 let startupError = null;
@@ -45,9 +52,13 @@ function renderChrome() {
   $('#date').textContent = formatLongToday();
   const loggedIn = Boolean(state.me);
   document.body.classList.toggle('logged-out', !loggedIn);
-  const route = currentRoute();
-  $('#nav').innerHTML = loggedIn
-    ? String(html`${Object.entries(ROUTES).map(([id, { label }]) => html`<a href="#${id}" class="${route === id ? 'active' : ''}" ${route === id ? html`aria-current="page"` : ''}>${label}</a>`)}`)
+  const active = NAV_OF[currentRoute()] || currentRoute();
+  const pending = reviewCount();
+  const link = ([id, label]) => html`<a href="#${id}" class="${active === id ? 'active' : ''}" ${active === id ? html`aria-current="page"` : ''}>${label}${id === 'oggi' && pending ? html`<span class="nav-badge" aria-label="${pending} da controllare">${pending}</span>` : ''}</a>`;
+  $('#nav').innerHTML = loggedIn ? String(html`${NAV.map(link)}`) : '';
+  // Telefono: barra in basso con «+» al centro; «Altro» è in alto a destra.
+  $('#tabbar').innerHTML = loggedIn
+    ? String(html`${NAV.slice(0, 2).map(link)}<button type="button" class="tab-add" data-add aria-label="Aggiungi">＋</button>${NAV.slice(2, 4).map(link)}`)
     : '';
   const sync = $('#sync');
   if (!state.online) sync.textContent = 'Offline · le modifiche non si possono salvare';
@@ -98,14 +109,11 @@ async function handleAction(el) {
     await update('task', item, { status: item.status === 'done' ? 'open' : 'done' });
   } else if (action === 'toggle' && kind === 'shopping') {
     await update('shopping', item, { checked: !item.checked });
-  } else if (action === 'delete') {
-    const undo = await remove(kind, item);
-    toast(`Eliminato: ${item.title || item.label}.`, { label: 'Annulla', run: () => undo().catch((err) => toast(err.message)) });
   }
 }
 
 function defaultTypeForRoute() {
-  return { spesa: 'shopping', attivita: 'task' }[currentRoute()] || 'event';
+  return { spesa: 'shopping', attivita: 'task', archivio: 'bill' }[currentRoute()] || 'event';
 }
 
 async function sync() {
@@ -143,6 +151,9 @@ function setup() {
     setTimeout(() => { if (pendingRender && !isTyping()) render(); }, 0);
   });
   $('#add').addEventListener('click', () => openEditor({ type: defaultTypeForRoute() }));
+  $('#tabbar').addEventListener('click', (e) => {
+    if (e.target.closest('[data-add]')) openEditor({ type: defaultTypeForRoute() });
+  });
   $('#legacy-import').addEventListener('click', () => { location.hash = '#impostazioni'; });
   $('#legacy-dismiss').addEventListener('click', () => {
     localStorage.setItem(impostazioni.LEGACY_DONE_KEY, 'ignorato');

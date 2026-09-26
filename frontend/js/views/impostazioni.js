@@ -112,13 +112,8 @@ export function render() {
     </section>
 
     <section class="module">
-      ${sectionHead('Proposte dalle email')}
-      <div id="email-proposals" aria-live="polite">Caricamento proposte…</div>
-    </section>
-
-    <section class="module">
-      ${sectionHead('Conflitti di calendario')}
-      <div id="calendar-conflicts" aria-live="polite">Caricamento conflitti…</div>
+      ${sectionHead('Proposte e conflitti')}
+      <p>Le proposte trovate nelle email e i conflitti del calendario sono in <a href="#controllare">Da controllare</a>.</p>
     </section>
 
     <section class="module">
@@ -140,8 +135,6 @@ async function runImport(data) {
 
 export function mount(root) {
   loadGoogle(root).catch((err) => { $('#google-settings', root).textContent = err.message; });
-  loadProposals(root).catch((err) => { $('#email-proposals', root).textContent = err.message; });
-  loadConflicts(root).catch((err) => { $('#calendar-conflicts', root).textContent = err.message; });
   loadCleanups(root).catch((err) => { $('#email-cleanups', root).textContent = err.message; });
   loadAutoTrashed(root).catch((err) => { $('#auto-trashed', root).textContent = err.message; });
   api('GET', '/connections/telegram').then(({ connected }) => {
@@ -382,47 +375,4 @@ async function loadGoogle(root) {
       await loadGoogle(root);
     } catch (err) { toast(err.message); }
   });
-}
-
-async function loadProposals(root) {
-  const box = $('#email-proposals', root);
-  if (!box) return;
-  const proposals = (await api('GET', '/proposals')).filter((item) => item.status === 'pending');
-  box.innerHTML = proposals.length ? String(html`${proposals.map((item) => html`
-    <article class="member-row" data-proposal="${item.id}">
-      <div><strong>${item.subject || 'Email senza oggetto'}</strong><p>${item.sender || ''}</p>
-        <p>${item.kind}: ${item.data.title || item.data.label || ''}</p><small>${item.snippet || ''}</small></div>
-      <div class="row-actions"><button type="button" data-decision="accept">Aggiungi</button>
-        <button type="button" data-decision="reject">Ignora</button></div>
-    </article>`)}`) : '<p>Nessuna proposta da verificare.</p>';
-  $$('[data-decision]', box).forEach((button) => button.addEventListener('click', async () => {
-    const row = button.closest('[data-proposal]');
-    const item = proposals.find((proposal) => proposal.id === row.dataset.proposal);
-    try {
-      await api('POST', `/proposals/${item.id}/review`, { body: { decision: button.dataset.decision }, version: item.version });
-      toast(button.dataset.decision === 'accept' ? 'Proposta aggiunta.' : 'Proposta ignorata.');
-      await loadProposals(root);
-    } catch (err) { toast(err.message); }
-  }));
-}
-
-async function loadConflicts(root) {
-  const box = $('#calendar-conflicts', root);
-  if (!box) return;
-  const conflicts = await api('GET', '/calendar/conflicts');
-  box.innerHTML = conflicts.length ? String(html`${conflicts.map((item) => html`
-    <article class="member-row" data-conflict="${item.id}">
-      <div><strong>${item.calendar}</strong><p>Insieme: ${item.local_title}</p>
-        <p>Google: ${item.remote.deleted ? 'Evento eliminato' : item.remote.title}</p></div>
-      <div class="row-actions"><button type="button" data-choice="google">Tieni Google</button>
-        ${!item.remote.deleted ? html`<button type="button" data-choice="local">Tieni Insieme</button>` : ''}</div>
-    </article>`)}`) : '<p>Nessun conflitto da risolvere.</p>';
-  $$('[data-choice]', box).forEach((button) => button.addEventListener('click', async () => {
-    const id = button.closest('[data-conflict]').dataset.conflict;
-    try {
-      await api('POST', `/calendar/conflicts/${id}/resolve`, { body: { choice: button.dataset.choice } });
-      toast('Conflitto risolto.');
-      await loadConflicts(root);
-    } catch (err) { toast(err.message); }
-  }));
 }

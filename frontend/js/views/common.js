@@ -16,9 +16,6 @@ function openButton(kind, id, title, metaParts) {
     <span class="item-title">${title}</span>${meta(metaParts)}</button>`;
 }
 
-const deleteButton = (kind, id, title) =>
-  html`<button type="button" class="delete" data-action="delete" data-kind="${kind}" data-id="${id}" aria-label="Elimina ${title}">Elimina</button>`;
-
 const memberName = (id) => memberById(id)?.display_name || null;
 
 export function eventRow(event, { showDate = false } = {}) {
@@ -27,7 +24,6 @@ export function eventRow(event, { showDate = false } = {}) {
   return html`<div class="item">
     <span class="time-pill ${event.all_day ? 'all-day' : ''}">${eventTimeLabel(event)}</span>
     ${openButton('event', event.id, event.title, [dateLabel, memberName(event.member_id) || 'Nessuno assegnato', event.location])}
-    ${deleteButton('event', event.id, event.title)}
   </div>`;
 }
 
@@ -47,7 +43,6 @@ export function taskRow(task) {
     <button type="button" class="check" data-action="toggle" data-kind="task" data-id="${task.id}"
       aria-pressed="${done}" aria-label="${done ? 'Riapri' : 'Completa'} ${task.title}">${done ? '✓' : ''}</button>
     ${openButton('task', task.id, task.title, [dueLabel(task), reminder, repeat, memberName(task.member_id) || 'Da assegnare', task.notes])}
-    ${deleteButton('task', task.id, task.title)}
   </div>`;
 }
 
@@ -56,8 +51,11 @@ export function shoppingRow(item) {
     <button type="button" class="check" data-action="toggle" data-kind="shopping" data-id="${item.id}"
       aria-pressed="${item.checked}" aria-label="${item.checked ? 'Rimetti in lista' : 'Spunta'} ${item.label}">${item.checked ? '✓' : ''}</button>
     ${openButton('shopping', item.id, item.label, [item.quantity])}
-    ${deleteButton('shopping', item.id, item.label)}
   </div>`;
 }
+
+/** Schede in cima ad Attività e Spesa, le due pagine della voce «Da fare». */
+export const todoTabs = (active) => html`<div class="subtabs" role="group" aria-label="Da fare">${[['attivita', 'Attività'], ['spesa', 'Spesa']].map(
+  ([id, label]) => html`<a href="#${id}" class="${active === id ? 'active' : ''}" ${active === id ? html`aria-current="page"` : ''}>${label}</a>`)}</div>`;
 
 export const sectionHead = (title, extra = '') => html`<div class="section-head"><h2>${title}</h2>${extra}</div>`;
