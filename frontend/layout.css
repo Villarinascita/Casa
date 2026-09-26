@@ -134,6 +134,51 @@ nav a.active .nav-badge { background: #1b1d2a; color: var(--green); }
 .danger:hover { background: var(--warn-bg); }
 .segmented span { padding-inline: 4px; }
 
+/* --- Costi ------------------------------------------------------------------------------- */
+
+.cost-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+.cost-toolbar .filter-pills { margin: 0; }
+.cost-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
+.cost-stat { display: grid; gap: 4px; padding: 16px 18px; border-radius: var(--radius); background: var(--paper-light); border: 1px solid var(--line); }
+.cost-stat span { font-size: 14px; color: var(--muted); }
+.cost-stat strong { font-size: 26px; font-variant-numeric: tabular-nums; letter-spacing: -.5px; }
+.cost-stat small { font-size: 13px; color: var(--muted); }
+.cost-stat.late { background: var(--warn-bg); border-color: #67404c; }
+.cost-stat.late strong { color: var(--warn); }
+
+.cost-chart { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 6px; align-items: end; height: 230px; }
+.cost-chart .bar {
+  display: flex; flex-direction: column; align-items: stretch; gap: 4px; height: 100%; min-height: 0; padding: 4px 3px;
+  border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--muted); font-weight: 600;
+}
+.cost-chart .bar:hover { background: var(--sage); }
+.cost-chart .bar.selected { border-color: var(--green); background: var(--sage); color: var(--ink); }
+.cost-chart .bar.future { opacity: .6; }
+.bar-value { font-size: 11px; font-variant-numeric: tabular-nums; min-height: 14px; }
+.bar-stack { flex: 1; width: 100%; min-height: 0; }
+.bar-label { font-size: 12px; text-transform: capitalize; }
+.cost-legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 12px; font-size: 14px; color: var(--muted); }
+.cost-legend .swatch { margin-right: 6px; vertical-align: -1px; }
+.cost-row .swatch { flex: none; }
+
+.cost-month { margin-top: 18px; }
+.cost-month .section-head { flex-wrap: nowrap; }
+.cost-month .section-head h2 { flex: 1; text-align: center; text-transform: capitalize; }
+.cost-row .amount { flex: none; font-size: 16px; font-variant-numeric: tabular-nums; }
+.cost-row.late .amount, .cost-row.late .meta { color: var(--warn); }
+.cost-row .pay { flex: none; min-width: 96px; }
+.cost-row .pay.undo { color: #98e4c9; border-color: #365455; }
+
+.cost-table-box { margin-top: 18px; padding: 16px 18px; border-radius: var(--radius); background: var(--paper-light); border: 1px solid var(--line); }
+.cost-table-box summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-size: 19px; font-weight: 700; }
+.cost-table-scroll { overflow-x: auto; }
+.cost-table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+.cost-table th, .cost-table td { padding: 10px 12px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.cost-table th:first-child { text-align: left; text-transform: capitalize; }
+.cost-table thead th { color: var(--muted); font-weight: 600; }
+.cost-table tr.selected { background: var(--sage); }
+.cost-table tfoot th, .cost-table tfoot td { border-bottom: 0; font-weight: 700; }
+
 /* --- Tablet medio ------------------------------------------------------------------------ */
 
 @media (min-width: 851px) and (max-width: 1150px) {
@@ -214,4 +259,14 @@ nav a.active .nav-badge { background: #1b1d2a; color: var(--green); }
   .subtabs { display: flex; }
   .subtabs a { flex: 1; min-width: 0; }
   .segmented span { font-size: 12px; }
+  .cost-summary { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .cost-stat { grid-template-columns: 1fr auto; align-items: baseline; }
+  .cost-stat small { grid-column: 1 / -1; }
+  .cost-stat strong { font-size: 22px; }
+  .cost-chart { height: 190px; gap: 2px; }
+  .bar-value { display: none; }
+  .bar-label { font-size: 11px; }
+  .cost-row { flex-wrap: wrap; }
+  .cost-row .item-open { flex: 1 1 60%; }
+  .cost-row .pay { min-width: 84px; }
 }
