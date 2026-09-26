@@ -2,7 +2,7 @@
 bollette si creano direttamente (vedi docs/superpowers/specs/2026-09-25-bollette-costi-casa-design.md)."""
 
 import base64
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -11,6 +11,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from .email_cleanup import TRASH_PERMISSION_MESSAGE, TrashNotPermitted, trash_message
+from .email_domains import is_blocked_sender
 from .hermes_client import HermesInvalidResponse
 from .models import Bill, EmailCreationNotice, EmailProcessed, Event, GoogleConnection, Proposal
 from .routers.assistant import ACTION_TYPES
@@ -55,7 +57,8 @@ def _is_stale(model, obj, now: datetime) -> bool:
 
 
 def ingest_message(db: Session, connection: GoogleConnection, message: dict,
-                   analyze: Callable[[str], dict], timezone_name: str, now: datetime | None = None) -> int:
+                   analyze: Callable[[str], dict], timezone_name: str, now: datetime | None = None,
+                   blocked_domains: Sequence[str] = (), trash: Callable[[str], None] | None = None) -> int:
     now = now or datetime.now(timezone.utc)
     message_id = message["id"]
     seen = db.scalar(select(EmailProcessed).where(EmailProcessed.connection_id == connection.id,
@@ -64,6 +67,16 @@ def ingest_message(db: Session, connection: GoogleConnection, message: dict,
         return 0
     headers = {item.get("name", "").lower(): item.get("value", "")
                for item in message.get("payload", {}).get("headers", [])}
+    if blocked_domains and is_blocked_sender(headers.get("from", ""), blocked_domains):
+        # Dominio bloccato: nessuna analisi Hermes (nessun costo), l'email va nel cestino.
+        if trash is not None:
+            try:
+                trash(message_id)
+            except TrashNotPermitted:
+                pass  # resta in casella; sync_gmail chiede di ricollegare Google
+        db.add(EmailProcessed(connection_id=connection.id, message_id=message_id))
+        db.commit()
+        return 0
     sender = headers.get("from", "")[:320]
     subject = headers.get("subject", "")[:500]
     snippet = message.get("snippet", "")[:500]
@@ -147,7 +160,8 @@ def ingest_message(db: Session, connection: GoogleConnection, message: dict,
 
 
 def sync_gmail(db: Session, connection: GoogleConnection, service,
-               analyze: Callable[[str], dict], timezone_name: str, now: datetime | None = None) -> int:
+               analyze: Callable[[str], dict], timezone_name: str, now: datetime | None = None,
+               blocked_domains: Sequence[str] = ()) -> int:
     """Scorre i messaggi che corrispondono ai filtri; riprende dalle pagine incomplete."""
     now = now or datetime.now(timezone.utc)
     since = connection.last_gmail_sync_at - timedelta(days=1) if connection.last_gmail_sync_at else now - timedelta(days=365)
@@ -156,16 +170,27 @@ def sync_gmail(db: Session, connection: GoogleConnection, service,
     if connection.gmail_page_token:
         params["pageToken"] = connection.gmail_page_token
     token = service.access_token(connection)
+    permission_missing = False
+
+    def trash(message_id: str) -> None:
+        nonlocal permission_missing
+        try:
+            trash_message(service, token, message_id)
+        except TrashNotPermitted:
+            permission_missing = True
+            raise
+
     page = service.api.get("https://gmail.googleapis.com/gmail/v1/users/me/messages", token, params)
     created = 0
     for item in page.get("messages", []):
         message = service.api.get(
             f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{item['id']}", token,
             {"format": "full"})
-        created += ingest_message(db, connection, message, analyze, timezone_name, now)
+        created += ingest_message(db, connection, message, analyze, timezone_name, now,
+                                  blocked_domains=blocked_domains, trash=trash)
     connection.gmail_page_token = page.get("nextPageToken")
     if not connection.gmail_page_token:
         connection.last_gmail_sync_at = now
-    connection.last_error = None
+    connection.last_error = TRASH_PERMISSION_MESSAGE if permission_missing else None
     db.commit()
     return created

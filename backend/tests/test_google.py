@@ -110,3 +110,9 @@ def test_disconnect_removes_google_records_without_deleting_local_event(luca, db
         assert db.scalar(select(EmailProcessed)) is None
         assert db.scalar(select(Proposal)) is None
         assert db.scalar(select(Event)).title == "Visita"
+
+
+def test_scope_gmail_consente_il_cestino_ma_non_la_sola_lettura():
+    from app.google import SCOPES
+    assert "https://www.googleapis.com/auth/gmail.modify" in SCOPES
+    assert "https://www.googleapis.com/auth/gmail.readonly" not in SCOPES

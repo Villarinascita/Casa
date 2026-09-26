@@ -2,6 +2,7 @@ import base64
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
+import httpx
 from sqlalchemy import select
 
 from app.gmail_sync import ingest_message, sync_gmail
@@ -332,3 +333,81 @@ def test_gmail_duplicate_proposal_does_not_stall_ingestion(db_factory, seed):
         assert ingest_message(db, connection, message,
                               lambda text: calls.append(text) or {"actions": []}, "Europe/Rome") == 0
         assert calls == []
+
+
+from app.email_cleanup import TRASH_PERMISSION_MESSAGE, TrashNotPermitted
+
+
+def _blocked_message(message_id, sender):
+    return {"id": message_id, "threadId": "t", "snippet": "Offerte",
+            "payload": {"headers": [{"name": "From", "value": sender}],
+                        "body": {"data": base64.urlsafe_b64encode(b"Sconti").decode()}}}
+
+
+def _connection(db, seed):
+    user = db.scalar(select(User).where(User.login == "luca"))
+    connection = GoogleConnection(household_id=seed["Rossi"], user_id=user.id,
+                                  email="luca@gmail.com", refresh_token_encrypted="encrypted")
+    db.add(connection)
+    db.commit()
+    return connection
+
+
+def test_gmail_dominio_bloccato_va_nel_cestino_senza_analisi(db_factory, seed):
+    with db_factory() as db:
+        connection = _connection(db, seed)
+        calls, trashed = [], []
+        message = _blocked_message("mail-news", "Promo <promo@offerte.newsletter.com>")
+        assert ingest_message(db, connection, message, lambda text: calls.append(text) or {"actions": []},
+                              "Europe/Rome", blocked_domains=["newsletter.com"], trash=trashed.append) == 0
+        assert calls == [] and trashed == ["mail-news"]
+        assert db.scalar(select(EmailProcessed)).message_id == "mail-news"
+
+
+def test_gmail_dominio_bloccato_senza_permesso_non_blocca(db_factory, seed):
+    def forbidden(message_id):
+        raise TrashNotPermitted("403")
+
+    with db_factory() as db:
+        connection = _connection(db, seed)
+        calls = []
+        message = _blocked_message("mail-news", "promo@newsletter.com")
+        assert ingest_message(db, connection, message, lambda text: calls.append(text) or {"actions": []},
+                              "Europe/Rome", blocked_domains=["newsletter.com"], trash=forbidden) == 0
+        assert calls == []
+        assert db.scalar(select(EmailProcessed)).message_id == "mail-news"
+
+
+def test_gmail_dominio_simile_non_bloccato_viene_analizzato(db_factory, seed):
+    with db_factory() as db:
+        connection = _connection(db, seed)
+        calls, trashed = [], []
+        message = _blocked_message("mail-ok", "x@notnewsletter.com")
+        ingest_message(db, connection, message, lambda text: calls.append(text) or {"actions": []},
+                       "Europe/Rome", blocked_domains=["newsletter.com"], trash=trashed.append)
+        assert len(calls) == 1 and trashed == []
+
+
+def test_sync_gmail_segnala_permesso_mancante(db_factory, seed):
+    class FakeService:
+        def access_token(self, connection):
+            return "access"
+
+        class api:
+            @staticmethod
+            def get(url, token, params=None):
+                if url.endswith("/messages"):
+                    return {"messages": [{"id": "mail-news"}]}
+                return _blocked_message("mail-news", "promo@newsletter.com")
+
+            @staticmethod
+            def post(url, token, body):
+                request = httpx.Request("POST", url)
+                raise httpx.HTTPStatusError("403", request=request, response=httpx.Response(403, request=request))
+
+    with db_factory() as db:
+        connection = _connection(db, seed)
+        sync_gmail(db, connection, FakeService(), lambda text: {"actions": []}, "Europe/Rome",
+                   blocked_domains=["newsletter.com"])
+        assert connection.last_error == TRASH_PERMISSION_MESSAGE
+        assert db.scalar(select(EmailProcessed)).message_id == "mail-news"
