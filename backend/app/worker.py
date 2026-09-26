@@ -15,13 +15,13 @@ from .db import SessionLocal
 from .email_cleanup import run_domain_cleanups
 from .email_notices import dispatch_email_creation_notices
 from . import habits
+from .bill_taxonomy import prompt_text, taxonomy_of
 from .email_promotions import dispatch_promo_summaries
 from .gmail_sync import sync_gmail
 from .google import GoogleService
 from .hermes_client import HermesClient
 from .models import Event, GoogleCalendar, GoogleConnection, Household, WorkerCursor
 from .reminders import dispatch_pending, enqueue_due
-from .schemas import DEFAULT_BILL_CATEGORIES
 from .telegram import process_update
 
 logger = logging.getLogger(__name__)
@@ -36,14 +36,18 @@ def run_google_once(db: Session, service: GoogleService, hermes_email: HermesCli
             if connection.last_gmail_sync_at is None or (now - connection.last_gmail_sync_at).total_seconds() >= 600:
                 household = db.get(Household, connection.household_id)
                 timezone_name = household.timezone
-                categories = list((household.settings or {}).get("bill_categories", DEFAULT_BILL_CATEGORIES))
+                taxonomy = taxonomy_of(household.settings)
+                categories = list(taxonomy)
+                bill_guide = prompt_text(taxonomy, household.settings)
                 household_settings = household.settings or {}
                 blocked = list(household_settings.get("blocked_email_domains", []))
                 learned = habits.examples(db, household.id)
                 sync_gmail(db, connection, service,
                            lambda text: hermes_email.analyze_email(
-                               text, timezone_name, settings.hermes_email_model, categories, examples=learned),
+                               text, timezone_name, settings.hermes_email_model, categories, examples=learned,
+                               bill_guide=bill_guide),
                            timezone_name, now, blocked_domains=blocked,
+                           household_settings=household_settings,
                            judge=lambda title, existing: hermes_email.same_event(
                                title, existing, settings.hermes_email_model),
                            auto_trash_promotions=bool(household_settings.get("auto_trash_promotions", True)),

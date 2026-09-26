@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
+from ..bill_taxonomy import learn
 from ..crud import Resource, audit, build_router, commit
 from ..db import get_db
 from ..errors import ApiError
@@ -48,6 +49,16 @@ def _bill_extras(obj: Bill, extras: dict, ctx: Ctx) -> dict:
     return {"payment_state": state}
 
 
+def _bill_learned(db: Session, obj: Bill, changed: dict, ctx: Ctx) -> None:
+    """Categoria corretta a mano: quel fornitore da ora va sempre lì."""
+    if "category" not in changed and "subcategory" not in changed:
+        return
+    household = db.get(Household, ctx.household_id)
+    settings = learn(household.settings, obj.supplier, obj.category, obj.subcategory)
+    if settings is not None:
+        household.settings = settings
+
+
 members = build_router("/members", Resource(
     Member, MemberIn, MemberPatch, MemberOut, extra_fields=("archived",), apply_extras=_member_extras,
     order_by=(Member.sort_order,), references_member=False))
@@ -61,6 +72,7 @@ shopping = build_router("/shopping/items", Resource(
 
 bills = build_router("/bills", Resource(
     Bill, BillIn, BillPatch, BillOut, extra_fields=("payment_state",), apply_extras=_bill_extras,
+    after_update=_bill_learned,
     order_by=(Bill.due_date,), references_member=False))
 
 events = build_router("/events", Resource(Event, EventIn, EventPatch, EventOut), custom_list=True)

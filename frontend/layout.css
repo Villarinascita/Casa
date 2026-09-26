@@ -156,14 +156,14 @@ nav a.active .nav-badge { background: #1b1d2a; color: var(--green); }
 .cost-chart .bar.future { opacity: .6; }
 .bar-value { font-size: 11px; font-variant-numeric: tabular-nums; min-height: 14px; }
 .bar-stack { flex: 1; width: 100%; min-height: 0; }
-.bar-label { font-size: 12px; text-transform: capitalize; }
+.bar-label { font-size: 12px; }
 .cost-legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 12px; font-size: 14px; color: var(--muted); }
 .cost-legend .swatch { margin-right: 6px; vertical-align: -1px; }
 .cost-row .swatch { flex: none; }
 
 .cost-month { margin-top: 18px; }
 .cost-month .section-head { flex-wrap: nowrap; }
-.cost-month .section-head h2 { flex: 1; text-align: center; text-transform: capitalize; }
+.cost-month .section-head h2 { flex: 1; text-align: center; }
 .cost-row .amount { flex: none; font-size: 16px; font-variant-numeric: tabular-nums; }
 .cost-row.late .amount, .cost-row.late .meta { color: var(--warn); }
 .cost-row .pay { flex: none; min-width: 96px; }
@@ -174,10 +174,19 @@ nav a.active .nav-badge { background: #1b1d2a; color: var(--green); }
 .cost-table-scroll { overflow-x: auto; }
 .cost-table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
 .cost-table th, .cost-table td { padding: 10px 12px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
-.cost-table th:first-child { text-align: left; text-transform: capitalize; }
+.cost-table th:first-child { text-align: left; }
 .cost-table thead th { color: var(--muted); font-weight: 600; }
 .cost-table tr.selected { background: var(--sage); }
 .cost-table tfoot th, .cost-table tfoot td { border-bottom: 0; font-weight: 700; }
+
+.taxonomy-row { display: grid; grid-template-columns: minmax(160px, 220px) minmax(0, 1fr); gap: 12px; align-items: center; }
+.taxonomy-row label { margin: 4px 0; }
+.cost-cat { margin-top: 10px; }
+.cost-cat > summary { display: flex; align-items: center; gap: 10px; min-height: 48px; cursor: pointer; font-weight: 700; font-size: 16px; }
+.cost-cat > summary .cat-total { margin-left: auto; font-variant-numeric: tabular-nums; }
+.cost-sub { margin: 6px 0 0 22px; font-size: 13px; color: var(--muted); font-weight: 600; letter-spacing: .3px; }
+.cost-table .sub th { padding-left: 32px; font-weight: 400; color: var(--muted); }
+.cost-table .sub td { color: var(--muted); }
 
 /* --- Tablet medio ------------------------------------------------------------------------ */
 
@@ -269,4 +278,5 @@ nav a.active .nav-badge { background: #1b1d2a; color: var(--green); }
   .cost-row { flex-wrap: wrap; }
   .cost-row .item-open { flex: 1 1 60%; }
   .cost-row .pay { min-width: 84px; }
+  .taxonomy-row { grid-template-columns: minmax(0, 1fr); gap: 0; }
 }

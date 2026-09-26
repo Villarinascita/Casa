@@ -38,7 +38,6 @@ class LoginIn(Schema):
     password: Annotated[str, StringConstraints(min_length=1, max_length=256)]
 
 
-DEFAULT_BILL_CATEGORIES = ["Bollette", "Auto e assicurazione", "Altro"]
 
 
 class HouseholdOut(OutSchema):
@@ -48,6 +47,7 @@ class HouseholdOut(OutSchema):
     version: int
     areas: list[str]
     bill_categories: list[str]
+    bill_taxonomy: dict[str, list[str]]
     blocked_email_domains: list[str]
     auto_trash_promotions: bool
     kept_email_senders: list[str]
@@ -57,6 +57,7 @@ class HouseholdPatch(Schema):
     name: Text(120) | None = None
     areas: list[Text(60)] | None = Field(default=None, max_length=30)
     bill_categories: list[Text(60)] | None = Field(default=None, max_length=30)
+    bill_taxonomy: dict[Text(60), list[Text(60)]] | None = Field(default=None, max_length=30)
     blocked_email_domains: list[str] | None = Field(default=None, max_length=100)
     auto_trash_promotions: bool | None = None
     kept_email_senders: list[str] | None = Field(default=None, max_length=100)
@@ -65,6 +66,15 @@ class HouseholdPatch(Schema):
     @classmethod
     def _unique_list(cls, value):
         return None if value is None else list(dict.fromkeys(value))
+
+    @field_validator("bill_taxonomy")
+    @classmethod
+    def _taxonomy(cls, value):
+        if value is None:
+            return None
+        if any(len(subs) > 20 for subs in value.values()):
+            raise ValueError("Al massimo 20 sottocategorie per categoria.")
+        return {c.strip(): list(dict.fromkeys(s.strip() for s in subs if s.strip())) for c, subs in value.items() if c.strip()}
 
     @field_validator("blocked_email_domains", "kept_email_senders")
     @classmethod
@@ -263,16 +273,18 @@ class ShoppingOut(EntityOut):
 
 class BillIn(Schema):
     category: Text(60)
+    subcategory: OptText(60) = None
     title: Text(180)
     supplier: OptText(180) = None
     amount: Decimal | None = Field(default=None, ge=0, max_digits=10, decimal_places=2)
     due_date: date | None = None
 
-    _blank = field_validator("supplier", mode="before")(_blank_to_none)
+    _blank = field_validator("supplier", "subcategory", mode="before")(_blank_to_none)
 
 
 class BillPatch(Schema):
     category: Text(60) | None = None
+    subcategory: OptText(60) = None
     title: Text(180) | None = None
     supplier: OptText(180) = None
     amount: Decimal | None = Field(default=None, ge=0, max_digits=10, decimal_places=2)
@@ -282,6 +294,7 @@ class BillPatch(Schema):
 
 class BillOut(EntityOut):
     category: str
+    subcategory: str | None
     title: str
     supplier: str | None
     amount: Decimal | None

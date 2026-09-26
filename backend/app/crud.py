@@ -136,6 +136,8 @@ class Resource:
     # Campi della patch che non sono colonne dirette (es. "checked", "status", "archived").
     extra_fields: tuple[str, ...] = ()
     apply_extras: Callable[[Any, dict[str, Any], Ctx], dict[str, Any]] = lambda obj, extras, ctx: {}
+    # Dopo una modifica salvata sull'oggetto (es. imparare dal cambio di categoria di un costo).
+    after_update: Callable[[Session, Any, dict[str, Any], Ctx], None] = lambda db, obj, changed, ctx: None
     order_by: tuple = ()
     references_member: bool = True
 
@@ -184,6 +186,7 @@ def build_router(prefix: str, res: Resource, *, custom_list: bool = False) -> AP
         changed = assign(obj, merged)
         changed |= res.apply_extras(obj, extras, ctx)
         if changed:
+            res.after_update(db, obj, changed, ctx)
             audit(db, ctx, "update", obj, changed)
             commit(db)
         return obj

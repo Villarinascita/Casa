@@ -196,10 +196,16 @@ def test_bollette_crud_e_stato_pagamento(luca):
 
 def test_bill_categories_famiglia(luca):
     household = luca.get("/api/v1/household").json()
-    assert household["bill_categories"] == ["Bollette", "Auto e assicurazione", "Altro"]
+    assert household["bill_categories"][:3] == ["Bollette", "Auto", "Casa"]
+    assert "Luce" in household["bill_taxonomy"]["Bollette"]
     updated = luca.patch("/api/v1/household", json={"bill_categories": ["Bollette", "Salute", "Bollette"]},
                          headers={"If-Match": str(household["version"])}).json()
     assert updated["bill_categories"] == ["Bollette", "Salute"]
+    assert updated["bill_taxonomy"]["Bollette"][0] == "Luce"  # le sottocategorie restano
+    again = luca.patch("/api/v1/household", json={"bill_taxonomy": {"Bollette": ["Luce", " Gas ", "Luce"], "Cani": []}},
+                       headers={"If-Match": str(updated["version"])}).json()
+    assert again["bill_taxonomy"] == {"Bollette": ["Luce", "Gas"], "Cani": []}
+    assert again["bill_categories"] == ["Bollette", "Cani"]
 
 
 def test_domini_bloccati_normalizzati(luca):

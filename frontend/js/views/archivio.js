@@ -7,7 +7,8 @@ import { heading } from './common.js';
 
 const PAST_MONTHS = 12;
 const NEXT_MONTHS = 3;
-const COLORS = ['#8fd0ff', '#f5cf65', '#c8b3ff', '#9ff0d3', '#ffa59a', '#ffc98a', '#b8c4ff', '#f0a6d8'];
+const COLORS = ['#8fd0ff', '#f5cf65', '#d8a47f', '#9ff0d3', '#ffa59a', '#c8b3ff', '#6fd3e8', '#f0a6d8',
+  '#b5e37a', '#ffd6a0', '#9aa7ff', '#cfd6e6'];
 
 let selectedMonth = today().slice(0, 7);
 let category = '';
@@ -36,8 +37,11 @@ function shiftMonth(month, delta) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
-const monthLabel = (month, style = 'short') => new Date(`${month}-01T12:00:00`)
-  .toLocaleDateString('it-IT', style === 'short' ? { month: 'short' } : { month: 'long', year: 'numeric' });
+function monthLabel(month, style = 'short') {
+  const label = new Date(`${month}-01T12:00:00`)
+    .toLocaleDateString('it-IT', style === 'short' ? { month: 'short' } : { month: 'long', year: 'numeric' });
+  return label[0].toUpperCase() + label.slice(1);
+}
 
 export function categoriesOf(bills) {
   const configured = state.household?.bill_categories || [];
@@ -86,27 +90,47 @@ function chart(months, totals, cats, colorOf) {
   <div class="cost-legend">${cats.map((c) => html`<span>${swatch(colorOf(c))}${c}</span>`)}</div>`;
 }
 
-function table(months, totals, cats) {
-  const withData = months.filter((m) => totals[m].total > 0);
-  if (!withData.length) return '';
-  const catTotal = (c) => withData.reduce((s, m) => s + (totals[m].byCategory[c] || 0), 0);
+const sum = (list) => list.reduce((s, b) => s + amount(b), 0);
+const NO_SUB = 'Senza sottocategoria';
+
+/** Voci raggruppate per chiave, nell'ordine dato (le chiavi non previste in fondo). */
+function groupBy(list, keyOf, order = []) {
+  const groups = new Map(order.map((k) => [k, []]));
+  for (const item of list) {
+    const key = keyOf(item);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(item);
+  }
+  return [...groups].filter(([, items]) => items.length);
+}
+
+function table(bills, months, cats) {
+  const current = today().slice(0, 7);
+  const year = months.filter((m) => m <= current).slice(-PAST_MONTHS);
+  const inYear = bills.filter((b) => year.includes(monthOf(b)));
+  if (!inYear.length) return '';
+  const active = new Set(inYear.map(monthOf)).size || 1;
+  const row = (label, list, cls = '') => html`<tr class="${cls}"><th scope="row">${label}</th>
+    <td>${euro(sum(list.filter((b) => monthOf(b) === selectedMonth)))}</td>
+    <td>${euro(sum(list) / active)}</td><td><strong>${euro(sum(list))}</strong></td></tr>`;
   return html`<details class="cost-table-box" open>
-    <summary>Mesi e categorie</summary>
+    <summary>Categorie nell'anno</summary>
     <div class="cost-table-scroll"><table class="cost-table">
-      <thead><tr><th scope="col">Mese</th>${cats.map((c) => html`<th scope="col">${c}</th>`)}<th scope="col">Totale</th></tr></thead>
-      <tbody>${withData.map((m) => html`<tr class="${m === selectedMonth ? 'selected' : ''}">
-        <th scope="row">${monthLabel(m, 'long')}</th>
-        ${cats.map((c) => html`<td>${totals[m].byCategory[c] ? euro(totals[m].byCategory[c]) : '—'}</td>`)}
-        <td><strong>${euro(totals[m].total)}</strong></td></tr>`)}</tbody>
-      <tfoot><tr><th scope="row">Totale</th>${cats.map((c) => html`<td>${euro(catTotal(c))}</td>`)}
-        <td><strong>${euro(withData.reduce((s, m) => s + totals[m].total, 0))}</strong></td></tr></tfoot>
+      <thead><tr><th scope="col">Categoria</th><th scope="col">${monthLabel(selectedMonth, 'long')}</th>
+        <th scope="col">Media al mese</th><th scope="col">Ultimi 12 mesi</th></tr></thead>
+      <tbody>${groupBy(inYear, (b) => b.category, cats).map(([cat, list]) => {
+        const subs = groupBy(list, (b) => b.subcategory || NO_SUB);
+        const detail = subs.length > 1 || subs[0][0] !== NO_SUB;
+        return html`${row(cat, list)}${detail ? subs.map(([sub, items]) => row(sub, items, 'sub')) : ''}`;
+      })}</tbody>
+      <tfoot>${row('Totale', inYear)}</tfoot>
     </table></div>
   </details>`;
 }
 
 function billRow(bill, colorOf) {
   const late = !isPaid(bill) && bill.due_date && bill.due_date < today();
-  const meta = [bill.category, bill.supplier, bill.due_date ? `${late ? 'scaduta' : 'scade'} ${formatDay(bill.due_date)}` : null,
+  const meta = [bill.supplier, bill.due_date ? `${late ? 'scaduta' : 'scade'} ${formatDay(bill.due_date)}` : null,
     bill.payment_state === 'addebito_previsto' ? 'addebito automatico' : null].filter(Boolean).join(' · ');
   return html`<div class="item cost-row ${isPaid(bill) ? 'done' : ''} ${late ? 'late' : ''}" data-bill="${bill.id}">
     ${swatch(colorOf(bill.category))}
@@ -120,23 +144,25 @@ function billRow(bill, colorOf) {
   </div>`;
 }
 
-function monthList(bills, colorOf) {
+const byDue = (a, b) => Number(isPaid(a)) - Number(isPaid(b)) || (a.due_date || '9999').localeCompare(b.due_date || '9999');
+
+function monthList(bills, colorOf, cats) {
   const inMonth = bills.filter((b) => monthOf(b) === selectedMonth);
-  const groups = [
-    ['Scaduti', inMonth.filter((b) => !isPaid(b) && b.due_date && b.due_date < today())],
-    ['Da pagare', inMonth.filter((b) => !isPaid(b) && !(b.due_date && b.due_date < today()))],
-    ['Pagati', inMonth.filter(isPaid)],
-  ];
-  const total = inMonth.reduce((s, b) => s + amount(b), 0);
   return html`<section class="panel cost-month">
     <div class="section-head">
       <button type="button" data-action="month" data-month="${shiftMonth(selectedMonth, -1)}" aria-label="Mese precedente">←</button>
-      <h2>${monthLabel(selectedMonth, 'long')} · ${euro(total)}</h2>
+      <h2>${monthLabel(selectedMonth, 'long')} · ${euro(sum(inMonth))}</h2>
       <button type="button" data-action="month" data-month="${shiftMonth(selectedMonth, 1)}" aria-label="Mese successivo">→</button>
     </div>
-    ${inMonth.length ? groups.filter(([, list]) => list.length).map(([title, list]) => html`
-      <h3>${title} · ${euro(list.reduce((s, b) => s + amount(b), 0))}</h3>${list.map((b) => billRow(b, colorOf))}`)
-    : html`<p class="empty">Nessun costo in questo mese.</p>`}
+    ${inMonth.length ? groupBy(inMonth, (b) => b.category, cats).map(([cat, list]) => {
+      const subs = groupBy(list, (b) => b.subcategory || NO_SUB);
+      const detail = subs.length > 1 || subs[0][0] !== NO_SUB;
+      return html`<details class="cost-cat" open>
+        <summary>${swatch(colorOf(cat))}${cat}<span class="cat-total">${euro(sum(list))}</span></summary>
+        ${subs.map(([sub, items]) => html`${detail ? html`<p class="cost-sub">${sub} · ${euro(sum(items))}</p>` : ''}
+          ${[...items].sort(byDue).map((b) => billRow(b, colorOf))}`)}
+      </details>`;
+    }) : html`<p class="empty">Nessun costo in questo mese.</p>`}
   </section>`;
 }
 
@@ -154,14 +180,14 @@ export function render() {
     <div class="cost-toolbar">
       <div class="filter-pills" role="group" aria-label="Categoria">
         <button type="button" data-action="category" data-category="" aria-pressed="${!category}">Tutte</button>
-        ${allCats.map((c) => html`<button type="button" data-action="category" data-category="${c}" aria-pressed="${category === c}">${c}</button>`)}
+        ${allCats.filter((c) => c === category || state.bills.some((b) => b.category === c)).map((c) => html`<button type="button" data-action="category" data-category="${c}" aria-pressed="${category === c}">${c}</button>`)}
       </div>
       <button type="button" class="primary" data-action="add" data-type="bill">＋ Nuovo costo</button>
     </div>
     ${summary(bills, months, totals)}
     <section class="panel">${chart(months, totals, cats, colorOf)}</section>
-    ${monthList(bills, colorOf)}
-    ${table(months, totals, cats)}`;
+    ${monthList(bills, colorOf, allCats)}
+    ${table(bills, months, allCats)}`;
 }
 
 /** Selezione di mese e categoria e pulsante «Pagato»; apertura della scheda e «+» li gestisce main.js. */

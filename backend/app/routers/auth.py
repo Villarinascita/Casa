@@ -5,9 +5,10 @@ from sqlalchemy.orm import Session
 from ..crud import check_version, commit
 from ..db import get_db
 from ..errors import ApiError
+from ..bill_taxonomy import taxonomy_of
 from ..email_cleanup import queue_domain_cleanups
 from ..models import EmailAutoTrash, EmailDomainCleanup, Household, HouseholdUser, User
-from ..schemas import DEFAULT_BILL_CATEGORIES, AutoTrashedOut, EmailCleanupOut, HouseholdOut, HouseholdPatch, LoginIn, MeOut
+from ..schemas import AutoTrashedOut, EmailCleanupOut, HouseholdOut, HouseholdPatch, LoginIn, MeOut
 from ..security import (Ctx, current, end_session, hash_password, hasher, login_limiter, start_session,
                         verify_password)
 
@@ -18,7 +19,8 @@ def household_out(household: Household) -> HouseholdOut:
     settings = household.settings or {}
     return HouseholdOut(id=household.id, name=household.name, timezone=household.timezone,
                         version=household.version, areas=list(settings.get("areas", [])),
-                        bill_categories=list(settings.get("bill_categories", DEFAULT_BILL_CATEGORIES)),
+                        bill_categories=list(taxonomy_of(settings)),
+                        bill_taxonomy=taxonomy_of(settings),
                         blocked_email_domains=list(settings.get("blocked_email_domains", [])),
                         auto_trash_promotions=bool(settings.get("auto_trash_promotions", True)),
                         kept_email_senders=list(settings.get("kept_email_senders", [])))
@@ -75,7 +77,13 @@ def update_household(data: HouseholdPatch, ctx: Ctx = Depends(current), db: Sess
     if data.areas is not None:
         household.settings = {**(household.settings or {}), "areas": data.areas}
     if data.bill_categories is not None:
-        household.settings = {**(household.settings or {}), "bill_categories": data.bill_categories}
+        # Elenco semplice (vecchia schermata): tiene le sottocategorie delle categorie rimaste.
+        current = taxonomy_of(household.settings)
+        taxonomy = {c: current.get(c, []) for c in data.bill_categories}
+        household.settings = {**(household.settings or {}), "bill_taxonomy": taxonomy, "bill_categories": list(taxonomy)}
+    if data.bill_taxonomy is not None:
+        household.settings = {**(household.settings or {}), "bill_taxonomy": data.bill_taxonomy,
+                              "bill_categories": list(data.bill_taxonomy)}
     if data.blocked_email_domains is not None:
         previous = list((household.settings or {}).get("blocked_email_domains", []))
         household.settings = {**(household.settings or {}), "blocked_email_domains": data.blocked_email_domains}

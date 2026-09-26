@@ -181,6 +181,7 @@ class Bill(HouseholdEntity, Base):
     __tablename__ = "bills"
 
     category: Mapped[str] = mapped_column(String(60))
+    subcategory: Mapped[str | None] = mapped_column(String(60))
     title: Mapped[str] = mapped_column(String(180))
     supplier: Mapped[str | None] = mapped_column(String(180))
     amount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))

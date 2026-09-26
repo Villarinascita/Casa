@@ -12,6 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from . import habits
+from .bill_taxonomy import known_supplier, normalize, taxonomy_of
 from .dedup import find_same_bill, find_same_event, find_same_task
 from .email_cleanup import TRASH_PERMISSION_MESSAGE, TrashNotPermitted, trash_message
 from .email_domains import is_blocked_sender
@@ -63,8 +64,10 @@ def ingest_message(db: Session, connection: GoogleConnection, message: dict,
                    analyze: Callable[[str], dict], timezone_name: str, now: datetime | None = None,
                    blocked_domains: Sequence[str] = (), trash: Callable[[str], bool | None] | None = None,
                    auto_trash_promotions: bool = False, kept_senders: Sequence[str] = (),
-                   judge: Callable[[str, list[str]], int | None] | None = None) -> int:
-    """`judge(nuovo, esistenti)`: Hermes decide nei casi dubbi se un appuntamento è già presente."""
+                   judge: Callable[[str, list[str]], int | None] | None = None,
+                   household_settings: dict | None = None) -> int:
+    """`judge(nuovo, esistenti)`: Hermes decide nei casi dubbi se un appuntamento è già presente.
+    `household_settings`: categorie dei costi e fornitori già classificati dalla famiglia."""
     now = now or datetime.now(timezone.utc)
     message_id = message["id"]
     seen = db.scalar(select(EmailProcessed).where(EmailProcessed.connection_id == connection.id,
@@ -166,6 +169,10 @@ def ingest_message(db: Session, connection: GoogleConnection, message: dict,
             if bill_data["amount"] is None:
                 # Nessun importo individuabile: meglio non creare la voce che indovinare (§3 del design).
                 continue
+            # Fornitore già classificato dalla famiglia: vince sempre sulla scelta di Hermes.
+            learned = known_supplier(household_settings, bill_data.get("supplier"))
+            bill_data["category"], bill_data["subcategory"] = learned or normalize(
+                taxonomy_of(household_settings), bill_data["category"], bill_data.get("subcategory"))
             if find_same_bill(db, connection.household_id, bill_data):
                 continue  # la stessa somma già registrata (altra email sullo stesso pagamento)
             db.add(Bill(household_id=connection.household_id, created_by=connection.user_id,
@@ -215,7 +222,8 @@ def ingest_message(db: Session, connection: GoogleConnection, message: dict,
 def sync_gmail(db: Session, connection: GoogleConnection, service,
                analyze: Callable[[str], dict], timezone_name: str, now: datetime | None = None,
                blocked_domains: Sequence[str] = (), auto_trash_promotions: bool = False,
-               kept_senders: Sequence[str] = (), judge: Callable[[str, list[str]], int | None] | None = None) -> int:
+               kept_senders: Sequence[str] = (), judge: Callable[[str, list[str]], int | None] | None = None,
+               household_settings: dict | None = None) -> int:
     """Scorre i messaggi che corrispondono ai filtri; riprende dalle pagine incomplete."""
     now = now or datetime.now(timezone.utc)
     since = connection.last_gmail_sync_at - timedelta(days=1) if connection.last_gmail_sync_at else now - timedelta(days=365)
@@ -243,7 +251,7 @@ def sync_gmail(db: Session, connection: GoogleConnection, service,
         created += ingest_message(db, connection, message, analyze, timezone_name, now,
                                   blocked_domains=blocked_domains, trash=trash,
                                   auto_trash_promotions=auto_trash_promotions, kept_senders=kept_senders,
-                                  judge=judge)
+                                  judge=judge, household_settings=household_settings)
     connection.gmail_page_token = page.get("nextPageToken")
     if not connection.gmail_page_token:
         connection.last_gmail_sync_at = now

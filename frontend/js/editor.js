@@ -49,11 +49,23 @@ function fillMembers(selectedId) {
   )}`);
 }
 
-function fillCategories(selected) {
-  const categories = [...(state.household?.bill_categories || ['Altro'])];
+const taxonomy = () => state.household?.bill_taxonomy || { Altro: [] };
+
+function fillCategories(selected, selectedSub) {
+  const categories = Object.keys(taxonomy());
   if (selected && !categories.includes(selected)) categories.push(selected);
   form().elements.category.innerHTML = String(html`${categories.map(
     (c) => html`<option value="${c}" ${c === selected ? 'selected' : ''}>${c}</option>`,
+  )}`);
+  fillSubcategories(selectedSub);
+}
+
+/** Sottocategorie della categoria scelta; quella del costo resta anche se proposta da Hermes. */
+function fillSubcategories(selected) {
+  const subs = [...(taxonomy()[form().elements.category.value] || [])];
+  if (selected && !subs.includes(selected)) subs.push(selected);
+  form().elements.subcategory.innerHTML = String(html`<option value="">Nessuna</option>${subs.map(
+    (s) => html`<option value="${s}" ${s === selected ? 'selected' : ''}>${s}</option>`,
   )}`);
 }
 
@@ -67,7 +79,7 @@ export function openEditor({ type = 'event', date, entity = null } = {}) {
   f.elements.type.value = type;
   $$('[name=type]', f).forEach((radio) => { radio.disabled = Boolean(entity); });
   fillMembers(entity?.member_id);
-  fillCategories(entity?.category);
+  fillCategories(entity?.category, entity?.subcategory);
 
   if (entity && type === 'event') {
     f.elements.title.value = entity.title;
@@ -114,7 +126,8 @@ function payload() {
   if (type === 'shopping') return { data: { label: title, quantity: f.quantity.value.trim() || null } };
   if (type === 'bill') {
     return { data: { title, category: f.category.value, supplier: f.supplier.value.trim() || null,
-      amount: f.amount.value === '' ? null : f.amount.value, due_date: f.bill_due.value || null } };
+      amount: f.amount.value === '' ? null : f.amount.value, due_date: f.bill_due.value || null,
+      subcategory: f.subcategory.value || null } };
   }
 
   const common = { title, member_id: f.member_id.value || null, notes: f.notes.value.trim() || null };
@@ -192,6 +205,7 @@ export function setupEditor() {
   $('#editor-delete').addEventListener('click', deleteEditing);
   f.addEventListener('change', (e) => {
     if (e.target.name === 'type' || e.target.name === 'all_day') syncFields();
+    if (e.target.name === 'category') fillSubcategories();
   });
   $('[data-close]', f).addEventListener('click', closeEditor);
   dialog().addEventListener('close', () => {

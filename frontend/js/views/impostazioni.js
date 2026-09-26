@@ -50,11 +50,15 @@ export function render() {
 
     <section class="module">
       ${sectionHead('Categorie dei costi')}
-      <p>Usate per smistare le bollette trovate nelle email. "Bollette", "Auto e assicurazione" e "Altro" ci sono già.</p>
+      <p>Hermes smista così i costi trovati nelle email. Scrivi le sottocategorie separate da virgola; togli la spunta per eliminare una categoria. Se correggi la categoria di un costo, Hermes ricorda quel fornitore.</p>
       <form id="bill-categories">
-        <div class="checks">${(state.household?.bill_categories || []).map((c) => html`<label class="setting-check"><input type="checkbox" name="category" value="${c}" checked>${c}</label>`)}</div>
+        ${Object.entries(state.household?.bill_taxonomy || {}).map(([c, subs]) => html`<div class="taxonomy-row">
+          <label class="setting-check"><input type="checkbox" name="category" value="${c}" checked>${c}</label>
+          <label class="grow"><span class="visually-hidden">Sottocategorie di ${c}</span><input name="subs" data-category="${c}" value="${subs.join(', ')}" placeholder="Sottocategorie, separate da virgola"></label>
+        </div>`)}
         <div class="quick-add">
-          <label class="grow"><span>Aggiungi una categoria</span><input name="custom" maxlength="60" placeholder="Es. Salute, Abbonamenti"></label>
+          <label class="grow"><span>Nuova categoria</span><input name="custom" maxlength="60" placeholder="Es. Animali"></label>
+          <label class="grow"><span>Sue sottocategorie</span><input name="custom_subs" placeholder="Es. Cibo, Veterinario"></label>
           <button type="submit" class="primary">Salva le categorie</button>
         </div>
       </form>
@@ -204,11 +208,15 @@ export function mount(root) {
   $('#bill-categories', root).addEventListener('submit', async (e) => {
     e.preventDefault();
     const form = e.target;
-    const bill_categories = $$('[name=category]:checked', form).map((i) => i.value);
+    const split = (text) => text.split(',').map((s) => s.trim()).filter(Boolean);
+    const kept = new Set($$('[name=category]:checked', form).map((i) => i.value));
+    const bill_taxonomy = Object.fromEntries($$('[name=subs]', form)
+      .filter((input) => kept.has(input.dataset.category))
+      .map((input) => [input.dataset.category, split(input.value)]));
     const custom = form.elements.custom.value.trim();
-    if (custom) bill_categories.push(custom);
+    if (custom) bill_taxonomy[custom] = split(form.elements.custom_subs.value);
     try {
-      await updateHousehold({ bill_categories });
+      await updateHousehold({ bill_taxonomy });
       toast('Categorie salvate.');
     } catch (err) { toast(err.message); }
   });
