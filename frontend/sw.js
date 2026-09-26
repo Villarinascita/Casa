@@ -1,7 +1,7 @@
 // Service worker: solo l'interfaccia va in cache (rete prima, cache se offline). Mai i dati di /api.
 // Aggiornare VERSION a ogni rilascio che cambia l'elenco dei file.
 
-const VERSION = '11';
+const VERSION = '12';
 const CACHE = `insieme-shell-v${VERSION}`;
 const ASSETS = [
   './', './index.html', './styles.css', './layout.css', './manifest.webmanifest', './icon.svg',
@@ -12,7 +12,11 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(ASSETS)).then(() => self.skipWaiting()));
+  // cache: 'reload' e 'no-cache': Cloudflare dice ai browser di tenere i file 4 ore; qui si chiede sempre
+  // al server (con ETag, quindi costa poco) per non restare su una versione vecchia dopo un rilascio.
+  event.waitUntil(caches.open(CACHE)
+    .then((cache) => cache.addAll(ASSETS.map((path) => new Request(path, { cache: 'reload' }))))
+    .then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (event) => {
@@ -30,7 +34,7 @@ self.addEventListener('fetch', (event) => {
   const shell = ASSETS.some((path) => new URL(path, self.registration.scope).href === url.href);
   if (!shell) return;
   event.respondWith(
-    fetch(request)
+    fetch(request, { cache: 'no-cache' })
       .then((response) => {
         if (response.ok) {
           const copy = response.clone();
