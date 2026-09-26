@@ -231,3 +231,54 @@ def test_403_con_corpo_non_interpretabile_diventa_permesso_mancante():
     api = FakeApi([], {}, status=403, empty_body=True)
     with pytest.raises(TrashNotPermitted):
         trash_message(FakeService(api), "token", "m1")
+
+
+def test_pagina_con_errore_non_segue_il_segnalibro_al_primo_giro(db_factory, seed):
+    with db_factory() as db:
+        _cleanup(db, seed)
+        api = FakeApi([{"messages": [{"id": "m1"}], "nextPageToken": "p2"}], {}, fail_on={"m1"})
+        run_domain_cleanups(db, FakeService(api), NOW)
+        row = db.scalar(select(EmailDomainCleanup))
+        assert row.status == "running" and row.page_token is None and row.failed_runs == 1
+
+
+def test_messaggio_sempre_in_errore_fa_saltare_la_pagina_dopo_tre_giri(db_factory, seed):
+    """Un messaggio che fallisce a ogni giro non deve bloccare la pulizia delle pagine successive."""
+    with db_factory() as db:
+        _cleanup(db, seed)
+        failing_page = {"messages": [{"id": "m1"}], "nextPageToken": "p2"}
+        api = FakeApi([dict(failing_page) for _ in range(3)] + [{"messages": [{"id": "m2"}]}],
+                      {"m2": "b@news.com"}, fail_on={"m1"})
+        service = FakeService(api)
+        for expected_failures in (1, 2):
+            run_domain_cleanups(db, service, NOW)
+            row = db.scalar(select(EmailDomainCleanup))
+            assert row.status == "running" and row.page_token is None and row.failed_runs == expected_failures
+        run_domain_cleanups(db, service, NOW)
+        assert row.page_token == "p2" and row.failed_runs == 0
+        assert run_domain_cleanups(db, service, NOW) == 1
+        assert api.list_params[3]["pageToken"] == "p2" and api.trashed == ["m2"]
+
+
+def test_messaggio_sempre_in_errore_sullultima_pagina_chiude_la_pulizia(db_factory, seed):
+    with db_factory() as db:
+        _cleanup(db, seed)
+        api = FakeApi([{"messages": [{"id": "m1"}]} for _ in range(3)], {}, fail_on={"m1"})
+        service = FakeService(api)
+        for _ in range(3):
+            run_domain_cleanups(db, service, NOW)
+        row = db.scalar(select(EmailDomainCleanup))
+        assert row.status == "done" and row.completed_at == NOW and row.trashed_count == 0
+
+
+def test_un_progresso_azzera_i_giri_falliti(db_factory, seed):
+    with db_factory() as db:
+        _cleanup(db, seed)
+        api = FakeApi([{"messages": [{"id": "m1"}]}, {"messages": [{"id": "m1"}, {"id": "m2"}]}],
+                      {"m2": "b@news.com"}, fail_on={"m1"})
+        service = FakeService(api)
+        run_domain_cleanups(db, service, NOW)
+        row = db.scalar(select(EmailDomainCleanup))
+        assert row.failed_runs == 1
+        run_domain_cleanups(db, service, NOW)
+        assert row.failed_runs == 0 and row.trashed_count == 1 and row.status == "running"

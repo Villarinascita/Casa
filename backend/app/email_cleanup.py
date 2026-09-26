@@ -88,6 +88,10 @@ def queue_domain_cleanups(db: Session, household_id: str, previous: Iterable[str
             row.completed_at = utcnow()
 
 
+# Giri consecutivi falliti sulla stessa pagina prima di saltarla.
+MAX_FAILED_RUNS = 3
+
+
 def _sender(service, token: str, message_id: str) -> str:
     meta = service.api.get(f"{GMAIL_MESSAGES}/{message_id}", token,
                            {"format": "metadata", "metadataHeaders": "From"})
@@ -148,20 +152,30 @@ def run_domain_cleanups(db: Session, service, now: datetime) -> int:
         if permission_denied:
             continue
 
+        next_token = page.get("nextPageToken")
         if page_trashed:
             # Sono state spostate email in questa pagina: si riparte dall'inizio al prossimo giro
             # per non saltare messaggi con un set di risultati che si è ristretto.
             row.page_token = None
-        elif page_failed:
-            # Nessun successo ma almeno un fallimento non-permesso (es. 429/5xx transitorio):
-            # si ritenta la stessa pagina al prossimo giro, senza seguire nextPageToken né
-            # marcare la pulizia come conclusa.
-            pass
-        else:
-            next_token = page.get("nextPageToken")
+            row.failed_runs = 0
+        elif not page_failed:
+            row.failed_runs = 0
             if next_token:
                 row.page_token = next_token
             else:
                 row.status, row.completed_at = "done", now
+        else:
+            # Nessun successo ma almeno un fallimento non-permesso (es. 429/5xx transitorio):
+            # si ritenta la stessa pagina, ma dopo MAX_FAILED_RUNS giri falliti di fila la si
+            # salta, così un messaggio sempre in errore non blocca il resto della pulizia.
+            row.failed_runs += 1
+            if row.failed_runs >= MAX_FAILED_RUNS:
+                logger.warning("Pagina del dominio %s saltata dopo %d giri falliti; alcune email "
+                               "restano in casella", row.domain, row.failed_runs)
+                row.failed_runs = 0
+                if next_token:
+                    row.page_token = next_token
+                else:
+                    row.status, row.completed_at = "done", now
         db.commit()
     return moved

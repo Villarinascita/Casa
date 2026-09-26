@@ -24,6 +24,7 @@ def upgrade() -> None:
         sa.Column("status", sa.String(10), nullable=False),
         sa.Column("page_token", sa.String(500)),
         sa.Column("trashed_count", sa.Integer(), nullable=False),
+        sa.Column("failed_runs", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("created_at", UTCDateTime(), nullable=False),
         sa.Column("completed_at", UTCDateTime()),
         sa.CheckConstraint("status IN ('running', 'done')", name="ck_email_domain_cleanups_status"))
