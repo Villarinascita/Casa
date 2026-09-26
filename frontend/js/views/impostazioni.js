@@ -296,12 +296,17 @@ async function loadAutoTrashed(root) {
   const rows = await api('GET', '/household/auto-trashed');
   if (!rows.length) { box.innerHTML = ''; return; }
   const when = (iso) => new Date(iso).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
-  box.innerHTML = String(html`<p>Ultime email messe nel cestino da Hermes:</p><ul>${rows.map((r) => html`<li>${when(r.trashed_at)} · ${r.sender} · ${r.subject} <button type="button" data-keep="${r.sender.split('@').pop()}">Tieni questo mittente</button></li>`)}</ul>`);
+  box.innerHTML = String(html`<p>Ultime email messe nel cestino da Hermes:</p><ul>${rows.map((r) => html`<li>${when(r.trashed_at)} · ${r.sender} · ${r.subject} ${r.sender.includes('@') ? html`<button type="button" data-keep="${r.sender.split('@').pop()}">Tieni questo mittente</button>` : ''}</li>`)}</ul>`);
   $$('[data-keep]', box).forEach((button) => button.addEventListener('click', async () => {
+    const domain = button.dataset.keep;
     const kept = state.household?.kept_email_senders || [];
+    const covered = (item) => item === domain || item.endsWith(`@${domain}`) || item.endsWith(`.${domain}`);
     try {
-      await updateHousehold({ kept_email_senders: [...new Set([...kept, button.dataset.keep])] });
-      toast(`Le email da ${button.dataset.keep} non andranno più nel cestino.`);
+      await updateHousehold({
+        kept_email_senders: [...new Set([...kept, domain])],
+        blocked_email_domains: (state.household?.blocked_email_domains || []).filter((item) => !covered(item)),
+      });
+      toast(`Le email da ${domain} non andranno più nel cestino.`);
     } catch (err) { toast(err.message); }
   }));
 }

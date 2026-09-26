@@ -59,7 +59,7 @@ def _is_stale(model, obj, now: datetime) -> bool:
 
 def ingest_message(db: Session, connection: GoogleConnection, message: dict,
                    analyze: Callable[[str], dict], timezone_name: str, now: datetime | None = None,
-                   blocked_domains: Sequence[str] = (), trash: Callable[[str], None] | None = None,
+                   blocked_domains: Sequence[str] = (), trash: Callable[[str], bool | None] | None = None,
                    auto_trash_promotions: bool = False, kept_senders: Sequence[str] = ()) -> int:
     now = now or datetime.now(timezone.utc)
     message_id = message["id"]
@@ -154,15 +154,16 @@ def ingest_message(db: Session, connection: GoogleConnection, message: dict,
         db.rollback()
         created_count = 0
         notices = []
+        promo = False
         db.add(EmailProcessed(connection_id=connection.id, message_id=message_id))
         db.commit()
     if (auto_trash_promotions and trash is not None
             and is_promotion_to_trash(message, headers, promo, created_count, kept_senders)):
         try:
-            trash(message_id)
+            moved = trash(message_id) is not False  # False: già sparita (404)
         except TrashNotPermitted:
-            pass  # resta in casella; sync_gmail chiede di ricollegare Google
-        else:
+            moved = False  # resta in casella; sync_gmail chiede di ricollegare Google
+        if moved:
             db.add(EmailAutoTrash(household_id=connection.household_id, connection_id=connection.id,
                                   recipient_user_id=connection.user_id, message_id=message_id,
                                   sender=trashed_sender(headers.get("from", "")), subject=subject))
@@ -189,10 +190,10 @@ def sync_gmail(db: Session, connection: GoogleConnection, service,
     token = service.access_token(connection)
     permission_missing = False
 
-    def trash(message_id: str) -> None:
+    def trash(message_id: str) -> bool:
         nonlocal permission_missing
         try:
-            trash_message(service, token, message_id)
+            return trash_message(service, token, message_id)
         except TrashNotPermitted:
             permission_missing = True
             raise

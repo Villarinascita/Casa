@@ -67,7 +67,7 @@ def process_update(db: Session, update: dict[str, Any],
         if pending and pending.expires_at <= utcnow():
             db.delete(pending)
             pending = None
-        kept = keep_command(text)
+        kept = keep_command(db, link.household_id, text)
         if kept is not None:
             reply = keep_sender(db, link.household_id, kept)
             db.add(TelegramUpdate(update_id=update_id, response=reply))

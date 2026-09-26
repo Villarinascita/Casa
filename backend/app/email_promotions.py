@@ -15,7 +15,8 @@ from .models import ChannelLink, EmailAutoTrash, Household
 
 SUMMARY_AFTER = timedelta(days=7)
 SUMMARY_TOP = 10
-KEEP_COMMAND = re.compile(r"^/?tieni\s+(.+)$", re.IGNORECASE)
+KEEP_COMMAND = re.compile(r"^(/?)tieni\s+(\S+)$", re.IGNORECASE)
+MAX_KEPT = 100
 _BULK_LABELS = {"CATEGORY_PROMOTIONS"}
 _PROTECTED_LABELS = {"STARRED", "IMPORTANT"}
 
@@ -26,6 +27,7 @@ def is_promotion_to_trash(message: dict, headers: dict[str, str], promo: bool, c
     labels = set(message.get("labelIds") or [])
     bulk = bool(headers.get("list-unsubscribe")) or bool(labels & _BULK_LABELS)
     return (promo and bulk and created == 0 and not labels & _PROTECTED_LABELS
+            and sender_address(headers.get("from", "")) is not None
             and not is_blocked_sender(headers.get("from", ""), kept_senders))
 
 
@@ -48,7 +50,7 @@ def dispatch_promo_summaries(db: Session, send: Callable[[str, str], None], now:
             continue
         counts = Counter(_domain(row.sender) for row in rows)
         top = ", ".join(f"{domain} {count}" for domain, count in counts.most_common(SUMMARY_TOP))
-        example = counts.most_common(1)[0][0].split(".")[-2] if counts else "nome"
+        example = counts.most_common(1)[0][0]
         text = (f"Negli ultimi giorni ho messo nel cestino {len(rows)} email pubblicitarie: {top}.\n"
                 "Restano nel cestino di Gmail per 30 giorni. Se un mittente ti serve scrivimi "
                 f"«tieni {example}».")
@@ -63,25 +65,39 @@ def dispatch_promo_summaries(db: Session, send: Callable[[str, str], None], now:
     return sent
 
 
-def keep_sender(db: Session, household_id: str, request: str) -> str:
-    """Aggiunge un dominio/indirizzo ai mittenti da tenere e lo toglie dai bloccati."""
+def resolve_kept(db: Session, household_id: str, request: str) -> tuple[str | None, list[str]]:
+    """Dominio/indirizzo valido così com'è, altrimenti l'unico dominio cestinato che contiene
+    la parola; se non è univoco ritorna (None, candidati)."""
     word = request.strip().lower()
     try:
-        entry = normalize_blocked_sender(word)
+        return normalize_blocked_sender(word), []
     except ValueError:
         senders = db.scalars(select(EmailAutoTrash.sender).where(EmailAutoTrash.household_id == household_id)).all()
         matches = sorted({_domain(sender) for sender in senders if word and word in _domain(sender)})
-        if len(matches) != 1:
-            found = f" Ho trovato: {', '.join(matches[:5])}." if matches else ""
-            return f"Non so quale mittente intendi con «{request.strip()}».{found} Scrivimi il dominio preciso, es. «tieni newsletter.conad.com»."
-        entry = matches[0]
+        return (matches[0], matches) if len(matches) == 1 else (None, matches)
+
+
+def _covered_by(item: str, entry: str) -> bool:
+    """Vero se la voce bloccata rientra nel mittente da tenere (stesso, indirizzo o sottodominio)."""
+    return item == entry or ("@" not in entry and (item.endswith("@" + entry) or item.endswith("." + entry)))
+
+
+def keep_sender(db: Session, household_id: str, request: str) -> str:
+    """Aggiunge un dominio/indirizzo ai mittenti da tenere e lo toglie dai bloccati."""
+    entry, matches = resolve_kept(db, household_id, request)
+    if entry is None:
+        found = f" Ho trovato: {', '.join(matches[:5])}." if matches else ""
+        return (f"Non so quale mittente intendi con «{request.strip()}».{found} "
+                "Scrivimi il dominio preciso, es. «/tieni newsletter.conad.com».")
     household = db.get(Household, household_id)
     settings = dict(household.settings or {})
     kept = list(settings.get("kept_email_senders", []))
     blocked = list(settings.get("blocked_email_domains", []))
     if entry not in kept:
+        if len(kept) >= MAX_KEPT:
+            return f"Hai già {MAX_KEPT} mittenti da tenere: togline qualcuno da Impostazioni."
         kept.append(entry)
-    remaining = [item for item in blocked if item != entry]
+    remaining = [item for item in blocked if not _covered_by(item, entry)]
     settings["kept_email_senders"] = kept
     settings["blocked_email_domains"] = remaining
     household.settings = settings
@@ -91,9 +107,18 @@ def keep_sender(db: Session, household_id: str, request: str) -> str:
             "Quelle già spostate le trovi nel cestino di Gmail.")
 
 
-def keep_command(text: str) -> str | None:
+def keep_command(db: Session, household_id: str, text: str) -> str | None:
+    """Il mittente da tenere se il messaggio è il comando «tieni», altrimenti None.
+    «/tieni x» è sempre il comando; «tieni x» senza barra solo se x è un mittente
+    riconoscibile, così «tieni presente…» o «tieni traccia…» restano richieste normali."""
     match = KEEP_COMMAND.match(text.strip())
-    return match.group(1) if match else None
+    if not match:
+        return None
+    slash, word = match.groups()
+    if slash:
+        return word
+    entry, _ = resolve_kept(db, household_id, word)
+    return word if entry else None
 
 
 def trashed_sender(from_header: str) -> str:

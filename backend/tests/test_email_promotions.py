@@ -192,3 +192,67 @@ def test_api_impostazioni_e_elenco(luca, anna, marco, db_factory, seed):
     listed = luca.get("/api/v1/household/auto-trashed").json()
     assert [row["sender"] for row in listed] == ["temu@eu.temuemail.com"]
     assert marco.get("/api/v1/household/auto-trashed").json() == []
+
+
+def test_frasi_con_tieni_restano_richieste_normali(luca, db_factory, seed):
+    code = luca.post("/api/v1/connections/telegram/start").json()["code"]
+    with db_factory() as db:
+        process_update(db, {"update_id": 1, "message": {"from": {"id": 123},
+            "chat": {"id": 123, "type": "private"}, "text": f"/link {code}"}}, lambda *_: {})
+        seen = []
+
+        def interpret(text, ctx):
+            seen.append(text)
+            return {"actions": [{"kind": "task", "data": {"title": "Comprare il latte"}}]}
+
+        for update_id, text in ((2, "tieni a mente di comprare il latte"), (3, "tieni presente")):
+            reply = process_update(db, {"update_id": update_id, "message": {"from": {"id": 123},
+                "chat": {"id": 123, "type": "private"}, "text": text}}, interpret)
+            assert reply.startswith("Salvato:")
+        assert len(seen) == 2
+        assert "kept_email_senders" not in db.get(Household, seed["Rossi"]).settings
+
+
+def test_mittente_senza_indirizzo_non_va_nel_cestino(db_factory, seed):
+    message = _message(sender="Offerte senza indirizzo")
+    assert is_promotion_to_trash(message, _headers(message), True, 0, []) is False
+
+
+def test_email_gia_sparita_non_si_conta(db_factory, seed):
+    with db_factory() as db:
+        connection = _connection(db, seed)
+        ingest_message(db, connection, _message(), lambda text: PROMO, "Europe/Rome", NOW,
+                       trash=lambda message_id: False, auto_trash_promotions=True)
+        assert db.scalar(select(EmailAutoTrash)) is None
+
+
+def test_errore_al_salvataggio_non_cestina(db_factory, seed, monkeypatch):
+    """Se il commit finale fallisce (le azioni create vanno perse) l'email non va nel cestino."""
+    from sqlalchemy.exc import SQLAlchemyError
+    with db_factory() as db:
+        connection = _connection(db, seed)
+        original_commit = db.commit
+        calls = {"n": 0}
+
+        def flaky_commit():
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise SQLAlchemyError("disco pieno")
+            return original_commit()
+
+        monkeypatch.setattr(db, "commit", flaky_commit)
+        trashed = []
+        result = {"actions": [{"kind": "task", "data": {"title": "Saldi dal 3 ottobre"}}], "promo": True}
+        ingest_message(db, connection, _message(), lambda text: result, "Europe/Rome", NOW,
+                       trash=trashed.append, auto_trash_promotions=True)
+        assert trashed == []
+
+
+def test_tieni_dominio_toglie_anche_indirizzi_e_sottodomini_bloccati(db_factory, seed):
+    with db_factory() as db:
+        household = db.get(Household, seed["Rossi"])
+        household.settings = {**household.settings,
+                              "blocked_email_domains": ["promo@conad.it", "news.conad.it", "temu.com"]}
+        db.commit()
+        keep_sender(db, seed["Rossi"], "conad.it")
+        assert db.get(Household, seed["Rossi"]).settings["blocked_email_domains"] == ["temu.com"]
