@@ -39,6 +39,11 @@ def _bag(text: str) -> tuple[set[str], int]:
     return bag, len({_stem(w) for w in ws})
 
 
+def _identifiers(text: str) -> set[str]:
+    """Numeri di almeno 5 cifre (ordini, contratti, pratiche); gli anni come 2026 non contano."""
+    return {n for n in re.findall(r"\d+", text or "") if len(n) >= 5}
+
+
 def _significant(stem: str) -> bool:
     return len(stem) >= 4 and not stem.isdigit()
 
@@ -48,7 +53,11 @@ def _size(text: str) -> int:
 
 
 def similarity(a: str, b: str) -> float:
-    """Quota delle parole del titolo più corto presenti anche nell'altro (ordine indifferente)."""
+    """Quota delle parole del titolo più corto presenti anche nell'altro (ordine indifferente).
+    Numeri identificativi diversi (ordine, contratto, pratica) indicano cose diverse."""
+    ids_a, ids_b = _identifiers(a), _identifiers(b)
+    if ids_a and ids_b and not ids_a & ids_b:
+        return 0.0
     bag_a, n_a = _bag(a)
     bag_b, n_b = _bag(b)
     common = bag_a & bag_b

@@ -27,6 +27,8 @@ def test_stesso_impegno_scritto_diversamente(a, b):
     ("PILATES ORE 9-11", "ORE 11 OSTETRICA"),
     ("Rinnova dominio mariachiaramarchesini.info", "Rinnova dominio mariachiaramarchesini.eu"),
     ("Dentista Meri", "Nuoto Sofia"),
+    ("Aggiorna il metodo di pagamento per l'ordine Amazon 404-5344434-0819503 (pagamento rifiutato)",
+     "Aggiornare il metodo di pagamento per l'ordine Amazon 404-3108009-4813105"),
 ])
 def test_impegni_diversi(a, b):
     assert similarity(a, b) < 0.85
