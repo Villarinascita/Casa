@@ -256,3 +256,55 @@ def test_tieni_dominio_toglie_anche_indirizzi_e_sottodomini_bloccati(db_factory,
         db.commit()
         keep_sender(db, seed["Rossi"], "conad.it")
         assert db.get(Household, seed["Rossi"]).settings["blocked_email_domains"] == ["temu.com"]
+
+
+EVENT = {"kind": "event", "data": {"title": "Webinar AI", "start_at": "2026-10-05T15:30:00+02:00"}}
+
+
+def test_pubblicita_non_crea_appuntamenti_ne_proposte(db_factory, seed):
+    from app.models import Event, Proposal
+    with db_factory() as db:
+        connection = _connection(db, seed)
+        ingest_message(db, connection, _message(), lambda text: {"actions": [EVENT], "promo": True},
+                       "Europe/Rome", NOW)
+        assert db.scalar(select(Event)) is None and db.scalar(select(Proposal)) is None
+
+
+def test_posta_di_massa_manda_gli_appuntamenti_in_da_controllare(db_factory, seed):
+    from app.models import Event, Proposal
+    with db_factory() as db:
+        connection = _connection(db, seed)
+        ingest_message(db, connection, _message(), lambda text: {"actions": [EVENT], "promo": False},
+                       "Europe/Rome", NOW)
+        assert db.scalar(select(Event)) is None
+        proposal = db.scalar(select(Proposal))
+        assert proposal.kind == "event" and proposal.data["title"] == "Webinar AI"
+
+
+def test_email_personale_crea_l_appuntamento_una_volta_sola(db_factory, seed):
+    from app.models import Event, Task
+    with db_factory() as db:
+        connection = _connection(db, seed)
+        result = {"actions": [{"kind": "event", "data": {"title": "Dentista", "start_at": "2026-10-05T15:30:00+02:00"}},
+                              {"kind": "task", "data": {"title": "Pagare la mensa"}}]}
+        for message_id in ("m1", "m2"):
+            ingest_message(db, connection, _message(message_id, unsubscribe=False), lambda text: result,
+                           "Europe/Rome", NOW)
+        assert len(db.scalars(select(Event)).all()) == 1
+        assert len(db.scalars(select(Task)).all()) == 1
+
+
+def test_prompt_esclude_eventi_aziendali_e_consegne():
+    import httpx
+    from app.hermes_client import HermesClient
+    captured = {}
+
+    def respond(request):
+        captured["body"] = request.content.decode("unicode_escape")
+        return httpx.Response(200, json={"choices": [{"message": {"content": '{"actions":[]}'}}]})
+
+    HermesClient("http://h", "k", "m", httpx.Client(transport=httpx.MockTransport(respond))).analyze_email(
+        "x", "Europe/Rome", "m", ["Altro"])
+    for phrase in ("NON sono appuntamenti", "webinar", "consegne o ritiri di pacchi", "lasciare recensioni",
+                   "Nel dubbio non estrarre"):
+        assert phrase in captured["body"], phrase

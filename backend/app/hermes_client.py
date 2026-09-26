@@ -74,6 +74,20 @@ class HermesClient:
                   '{"actions":[{"kind":"event|task|shopping","data":{...}}],'
                   '"bills":[{"category":"...","title":"...","supplier":"...","amount":0.0,"due_date":"YYYY-MM-DD"}],'
                   '"promo":false}. '
+                  "APPUNTAMENTI (event): SOLO impegni già presi dalla famiglia che la riguardano di persona: "
+                  "visite mediche, prenotazioni confermate (voli, treni, hotel, parcheggi, ristoranti), "
+                  "interventi o tecnici a casa, colloqui e riunioni a cui è convocata, lezioni o attività a cui "
+                  "è già iscritta. NON sono appuntamenti: webinar, corsi, convegni, fiere, eventi o inviti "
+                  "organizzati da aziende, banche, negozi, associazioni o ordini professionali; aperture, "
+                  "chiusure o cambi d'orario di negozi, palestre o piscine; manutenzioni di servizi; "
+                  "promozioni e saldi; consegne o ritiri di pacchi; uscite di film o serie. "
+                  "ATTIVITÀ (task): SOLO obblighi concreti che la famiglia deve fare, con una conseguenza se non "
+                  "li fa: pagare, rinnovare un documento, inviare documenti richiesti, dichiarazioni, disdette, "
+                  "rispondere a una richiesta personale. NON sono attività: lasciare recensioni o feedback, "
+                  "confermare la ricezione di un ordine, ritirare o tracciare pacchi, usare buoni sconto, "
+                  "partecipare a concorsi, iscriversi o confermare la partecipazione a eventi, leggere "
+                  "newsletter, aggiornare profili di app per promozioni. "
+                  "Nel dubbio non estrarre né appuntamenti né attività. "
                   "Per event usa title e start_at con offset, oppure all_day e start_date. "
                   "Per task usa title, due_date/remind_at facoltativi. Per shopping usa label. "
                   f"Per bills usa una categoria SOLO tra queste: {category_list}. Se non è chiara, usa \"Altro\". "

@@ -7,15 +7,16 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from .email_cleanup import TRASH_PERMISSION_MESSAGE, TrashNotPermitted, trash_message
 from .email_domains import is_blocked_sender
-from .email_promotions import is_promotion_to_trash, trashed_sender
+from .email_promotions import is_bulk_mail, is_promotion_to_trash, trashed_sender
 from .hermes_client import HermesInvalidResponse
-from .models import Bill, EmailAutoTrash, EmailCreationNotice, EmailProcessed, Event, GoogleConnection, Proposal
+from .models import (Bill, EmailAutoTrash, EmailCreationNotice, EmailProcessed, Event, GoogleConnection,
+                     Proposal, Task)
 from .routers.assistant import ACTION_TYPES
 from .schemas import ActionBatchIn, BillIn
 
@@ -57,6 +58,20 @@ def _is_stale(model, obj, now: datetime) -> bool:
     return bool(reference and reference < cutoff)
 
 
+def _already_there(db: Session, household_id: str, model, data: dict) -> bool:
+    """Stesso appuntamento (titolo e inizio) o stessa attività aperta già presenti: la stessa
+    comunicazione arriva spesso in più email e non va duplicata."""
+    title = (data.get("title") or "").strip().lower()
+    if model is Event:
+        when = (Event.start_date == data.get("start_date")) if data.get("all_day") else (Event.start_at == data.get("start_at"))
+        query = select(Event.id).where(Event.household_id == household_id, Event.deleted_at.is_(None),
+                                       func.lower(Event.title) == title, when)
+    else:
+        query = select(Task.id).where(Task.household_id == household_id, Task.deleted_at.is_(None),
+                                      Task.status == "open", func.lower(Task.title) == title)
+    return db.scalar(query.limit(1)) is not None
+
+
 def ingest_message(db: Session, connection: GoogleConnection, message: dict,
                    analyze: Callable[[str], dict], timezone_name: str, now: datetime | None = None,
                    blocked_domains: Sequence[str] = (), trash: Callable[[str], bool | None] | None = None,
@@ -92,12 +107,17 @@ def ingest_message(db: Session, connection: GoogleConnection, message: dict,
         actions = result.get("actions") or []
         bills = result.get("bills") or []
         batch = ActionBatchIn.model_validate({"actions": actions}) if actions else None
+        # Posta di massa (newsletter, promozioni): un appuntamento o un'attività non si crea mai da
+        # solo ma passa da «Da controllare»; se Hermes la giudica pura pubblicità non si propone nemmeno.
+        bulk = is_bulk_mail(message, headers)
         if batch:
             proposal_index = 0
             for action in batch.actions:
                 schema, model = ACTION_TYPES[action.kind]
                 validated = schema.model_validate(action.data)
-                if action.kind == "shopping":
+                if promo and action.kind != "shopping":
+                    continue
+                if action.kind == "shopping" or bulk:
                     data = validated.model_dump(mode="json")
                     db.add(Proposal(household_id=connection.household_id, created_by=connection.user_id,
                                     connection_id=connection.id, message_id=message_id,
@@ -111,6 +131,8 @@ def ingest_message(db: Session, connection: GoogleConnection, message: dict,
                     proposal_index += 1
                 else:
                     data = validated.model_dump()
+                    if _already_there(db, connection.household_id, model, data):
+                        continue
                     # Un appuntamento/attività estratti da email non devono mai assegnarsi
                     # automaticamente a un familiare: un member_id inventato dal modello farebbe
                     # fallire il flush (FK) e bloccherebbe per sempre l'ingestione di questo

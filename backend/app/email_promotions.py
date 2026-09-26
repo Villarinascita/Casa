@@ -21,12 +21,16 @@ _BULK_LABELS = {"CATEGORY_PROMOTIONS"}
 _PROTECTED_LABELS = {"STARRED", "IMPORTANT"}
 
 
+def is_bulk_mail(message: dict, headers: dict[str, str]) -> bool:
+    """Posta di massa: link «annulla iscrizione» o categoria Promozioni di Gmail."""
+    return bool(headers.get("list-unsubscribe")) or bool(set(message.get("labelIds") or []) & _BULK_LABELS)
+
+
 def is_promotion_to_trash(message: dict, headers: dict[str, str], promo: bool, created: int,
                           kept_senders: Sequence[str]) -> bool:
     """Tutte le condizioni della §2: in dubbio l'email resta in casella."""
     labels = set(message.get("labelIds") or [])
-    bulk = bool(headers.get("list-unsubscribe")) or bool(labels & _BULK_LABELS)
-    return (promo and bulk and created == 0 and not labels & _PROTECTED_LABELS
+    return (promo and is_bulk_mail(message, headers) and created == 0 and not labels & _PROTECTED_LABELS
             and sender_address(headers.get("from", "")) is not None
             and not is_blocked_sender(headers.get("from", ""), kept_senders))
 
