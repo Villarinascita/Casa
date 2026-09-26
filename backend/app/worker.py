@@ -12,6 +12,7 @@ from .bills import dispatch_bill_reminders
 from .calendar_sync import push_local_event, sync_calendar
 from .config import settings
 from .db import SessionLocal
+from .email_cleanup import run_domain_cleanups
 from .email_notices import dispatch_email_creation_notices
 from .gmail_sync import sync_gmail
 from .google import GoogleService
@@ -34,10 +35,11 @@ def run_google_once(db: Session, service: GoogleService, hermes_email: HermesCli
                 household = db.get(Household, connection.household_id)
                 timezone_name = household.timezone
                 categories = list((household.settings or {}).get("bill_categories", DEFAULT_BILL_CATEGORIES))
+                blocked = list((household.settings or {}).get("blocked_email_domains", []))
                 sync_gmail(db, connection, service,
                            lambda text: hermes_email.analyze_email(
                                text, timezone_name, settings.hermes_email_model, categories),
-                           timezone_name, now)
+                           timezone_name, now, blocked_domains=blocked)
         except Exception as exc:
             db.rollback()
             connection = db.get(GoogleConnection, connection.id)
@@ -52,7 +54,9 @@ def run_google_once(db: Session, service: GoogleService, hermes_email: HermesCli
                 events = db.scalars(select(Event).where(Event.household_id == connection.household_id)).all()
                 for event in events:
                     push_local_event(db, connection, event, service)
-            connection.last_error = gmail_error
+            if gmail_error:
+                # Senza errore Gmail si lascia l'esito scritto da sync_gmail (es. «ricollega Google»).
+                connection.last_error = gmail_error
             db.commit()
         except Exception as exc:
             db.rollback()
@@ -155,6 +159,11 @@ def main() -> None:
                     run_google_once(db, google, hermes_email, datetime.now(timezone.utc))
                     dispatch_bill_reminders(db, messenger.send, datetime.now(timezone.utc))
                     dispatch_email_creation_notices(db, messenger.send, datetime.now(timezone.utc))
+                    try:
+                        run_domain_cleanups(db, google, datetime.now(timezone.utc))
+                    except Exception:
+                        db.rollback()
+                        logger.exception("Pulizia dei domini bloccati fallita; nuovo tentativo al prossimo giro")
         except Exception:
             logger.exception("Ciclo del worker fallito; nuovo tentativo tra 15 secondi")
             time.sleep(15)

@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select
 
-from app.models import ChannelLink, EmailCreationNotice, Event, GoogleCalendar, GoogleConnection, User
+from app.models import ChannelLink, EmailCreationNotice, Event, GoogleCalendar, GoogleConnection, Household, User
 from app.worker import run_google_once, run_once
 from app.email_notices import dispatch_email_creation_notices
 
@@ -34,7 +34,7 @@ def test_google_worker_runs_gmail_calendar_and_outbound_then_waits_ten_minutes(d
 
     calls = []
 
-    def fake_gmail(db, connection, service, analyze, timezone_name, now):
+    def fake_gmail(db, connection, service, analyze, timezone_name, now, blocked_domains=()):
         calls.append("gmail")
         connection.last_gmail_sync_at = now
         db.commit()
@@ -72,7 +72,7 @@ def test_google_worker_syncs_calendar_even_if_gmail_fails(db_factory, seed, monk
 
     calls = []
 
-    def failing_gmail(db, connection, service, analyze, timezone_name, now):
+    def failing_gmail(db, connection, service, analyze, timezone_name, now, blocked_domains=()):
         raise RuntimeError("Hermes non configurato")
 
     def fake_calendar(db, connection, calendar, service, now):
@@ -176,3 +176,29 @@ def test_email_notice_without_telegram_link_does_not_starve_linked_notice(db_fac
         now = datetime(2026, 9, 25, tzinfo=timezone.utc)
         assert dispatch_email_creation_notices(db, lambda chat_id, text: sent.append(text), now) == 1
         assert sent == ["Con link"]
+
+
+def test_google_worker_passa_i_domini_bloccati_e_conserva_l_avviso(db_factory, seed, monkeypatch):
+    from app import worker
+
+    seen = []
+
+    def fake_gmail(db, connection, service, analyze, timezone_name, now, blocked_domains=()):
+        seen.append(list(blocked_domains))
+        connection.last_gmail_sync_at = now
+        connection.last_error = "Ricollega Google"
+        db.commit()
+
+    monkeypatch.setattr(worker, "sync_gmail", fake_gmail)
+    now = datetime(2026, 9, 26, tzinfo=timezone.utc)
+    with db_factory() as db:
+        household = db.get(Household, seed["Rossi"])
+        household.settings = {**(household.settings or {}), "blocked_email_domains": ["news.com"]}
+        user = db.scalar(select(User).where(User.login == "luca"))
+        connection = GoogleConnection(household_id=seed["Rossi"], user_id=user.id,
+                                      email="luca@gmail.com", refresh_token_encrypted="encrypted")
+        db.add(connection)
+        db.commit()
+        run_google_once(db, object(), object(), now)
+        assert seen == [["news.com"]]
+        assert db.get(GoogleConnection, connection.id).last_error == "Ricollega Google"
