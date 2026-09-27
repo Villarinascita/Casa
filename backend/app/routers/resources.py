@@ -82,8 +82,10 @@ events = build_router("/events", Resource(Event, EventIn, EventPatch, EventOut),
 def list_events(ctx: Ctx = Depends(current), db: Session = Depends(get_db),
                 start: date | None = Query(None, alias="from", description="Primo giorno incluso (ora locale)"),
                 end: date | None = Query(None, alias="to", description="Giorno escluso (ora locale)")):
-    """Appuntamenti che si sovrappongono all'intervallo di giorni locali [from, to)."""
-    query = select(Event).where(Event.household_id == ctx.household_id, Event.deleted_at.is_(None))
+    """Appuntamenti che si sovrappongono all'intervallo di giorni locali [from, to).
+    Quelli del programma dei nonni restano fuori: si vedono solo nella pagina dei nonni."""
+    query = select(Event).where(Event.household_id == ctx.household_id, Event.deleted_at.is_(None),
+                                Event.source != "nonni")
     if start or end:
         if start and end and end <= start:
             raise ApiError(422, "validation_error", "L'intervallo di date non è valido.")

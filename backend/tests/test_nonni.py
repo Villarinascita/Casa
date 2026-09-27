@@ -93,3 +93,17 @@ def test_impostazione_dei_nonni(luca, db_factory, seed):
     updated = luca.patch("/api/v1/household", json={"grandparent_members": [member]},
                          headers={"If-Match": str(household["version"])})
     assert updated.status_code == 200 and updated.json()["grandparent_members"] == [member]
+
+
+def test_gli_impegni_dei_nonni_non_entrano_nel_calendario_di_famiglia(luca, db_factory, seed):
+    nonna_id, monday = _nonna(db_factory, seed)
+    with db_factory() as db:
+        start = datetime.combine(monday + timedelta(days=2), datetime.min.time(), tzinfo=timezone.utc) + timedelta(hours=14)
+        db.add(Event(household_id=seed["Rossi"], title="Ginnastica (programma nonni)", start_at=start,
+                     member_id=nonna_id, source="nonni"))
+        db.commit()
+    titles = [e["title"] for e in luca.get("/api/v1/events").json()]
+    assert "Ginnastica (programma nonni)" not in titles and "Riunione di Luca" in titles
+    client, _ = _login_nonna(luca)
+    wednesday = client.get("/api/v1/nonni/week").json()["days"][2]
+    assert [i["title"] for i in wednesday["items"]] == ["Ginnastica (programma nonni)"]

@@ -77,7 +77,7 @@ def events_on_day(db: Session, household_id: str, day: date, tz: ZoneInfo) -> li
     start = datetime.combine(day - timedelta(days=1), datetime.min.time(), tzinfo=tz)
     end = start + timedelta(days=3)
     rows = db.scalars(select(Event).where(
-        Event.household_id == household_id, Event.deleted_at.is_(None),
+        Event.household_id == household_id, Event.deleted_at.is_(None), Event.source != "nonni",
         or_(Event.start_at.between(start, end),
             Event.start_date.between(day - timedelta(days=31), day)))).all()
     found = []
