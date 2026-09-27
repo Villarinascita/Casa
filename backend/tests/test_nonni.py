@@ -120,3 +120,19 @@ def test_anteprima_modifica_un_impegno_dei_nonni(luca, db_factory, seed):
     assert luca.get("/api/v1/nonni/week").json()["days"][1]["items"][0]["title"] == "Prendere Matilde a ginnastica alle 17"
     client, _ = _login_nonna(luca)
     assert client.patch(f"/api/v1/events/{item['id']}", json={"title": "x"}, headers={"If-Match": "9"}).status_code == 403
+
+
+
+def test_accessi_adulto_ed_eliminazione(luca, db_factory, seed):
+    created = luca.post("/api/v1/household/users", json={"login": "mariachiara", "role": "adult"})
+    assert created.status_code == 201 and created.json()["role"] == "adult"
+    client = make_client()
+    assert client.post("/api/v1/auth/login", json={"login": "mariachiara", "password": created.json()["password"]}).json()["role"] == "adult"
+    assert client.get("/api/v1/events").status_code == 200  # un adulto vede tutta l'app
+    me = luca.get("/api/v1/me").json()["user_id"]
+    assert luca.delete(f"/api/v1/household/users/{me}").status_code == 404  # non si elimina se stessi
+    assert luca.delete(f"/api/v1/household/users/{created.json()['id']}").status_code == 204
+    assert client.get("/api/v1/me").status_code == 401
+    assert "mariachiara" not in [u["login"] for u in luca.get("/api/v1/household/users").json()]
+    again = luca.post("/api/v1/household/users", json={"login": "mariachiara", "role": "adult"})
+    assert again.status_code == 201  # il nome utente è di nuovo libero

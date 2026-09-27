@@ -5,6 +5,7 @@ import base64
 import binascii
 import secrets
 from datetime import date, datetime, time, timedelta
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query
@@ -69,10 +70,12 @@ def week(start: date | None = Query(None, description="Un giorno qualsiasi della
     }
 
 
-# --- Accessi dei nonni (solo l'amministratore della famiglia) ---------------------------------
+# --- Accessi della famiglia (solo l'amministratore) -----------------------------------------
 
-class GrandparentIn(BaseModel):
+class AccessIn(BaseModel):
+    """«adult»: tutta l'app; «nonno»: solo la pagina dei nonni."""
     login: str = Field(min_length=3, max_length=40)
+    role: Literal["adult", "nonno"] = "nonno"
 
     @field_validator("login")
     @classmethod
@@ -103,8 +106,8 @@ def list_users(ctx: Ctx = Depends(current), db: Session = Depends(get_db)):
 
 
 @router.post("/household/users", status_code=201)
-def create_grandparent(data: GrandparentIn, ctx: Ctx = Depends(current), db: Session = Depends(get_db)):
-    """Nuovo accesso «nonno»: vede solo la settimana dei nonni. La password si mostra una volta sola."""
+def create_access(data: AccessIn, ctx: Ctx = Depends(current), db: Session = Depends(get_db)):
+    """Nuovo accesso adulto o «nonno». La password si mostra una volta sola."""
     _admin(ctx)
     if db.scalar(select(User).where(User.login == data.login)):
         raise ApiError(409, "login_taken", "Questo nome utente esiste già.")
@@ -112,24 +115,47 @@ def create_grandparent(data: GrandparentIn, ctx: Ctx = Depends(current), db: Ses
     user = User(login=data.login, password_hash=hash_password(password))
     db.add(user)
     db.flush()
-    db.add(HouseholdUser(household_id=ctx.household_id, user_id=user.id, role="nonno"))
+    db.add(HouseholdUser(household_id=ctx.household_id, user_id=user.id, role=data.role))
     db.commit()
-    return {"id": user.id, "login": user.login, "password": password}
+    return {"id": user.id, "login": user.login, "role": data.role, "password": password}
+
+
+def _other_member(db: Session, ctx: Ctx, user_id: str) -> HouseholdUser:
+    """Un accesso della famiglia diverso dal proprio (il proprio si gestisce da «Cambia password»)."""
+    membership = db.get(HouseholdUser, (ctx.household_id, user_id))
+    if membership is None or user_id == ctx.user_id:
+        raise ApiError(404, "not_found", "Accesso non trovato.")
+    return membership
+
+
+def _close_sessions(db: Session, user_id: str) -> None:
+    for session in db.scalars(select(UserSession).where(UserSession.user_id == user_id)).all():
+        db.delete(session)
+
+
+@router.delete("/household/users/{user_id}", status_code=204)
+def delete_access(user_id: str, ctx: Ctx = Depends(current), db: Session = Depends(get_db)):
+    """Toglie un accesso: l'utente resta nello storico (disattivato) e il nome utente torna libero."""
+    _admin(ctx)
+    membership = _other_member(db, ctx, user_id)
+    user = db.get(User, user_id)
+    user.disabled = True
+    user.login = f"{user.login}.eliminato.{user.id[:8]}"[:80]
+    _close_sessions(db, user_id)
+    db.delete(membership)
+    db.commit()
 
 
 @router.post("/household/users/{user_id}/password")
-def reset_grandparent_password(user_id: str, ctx: Ctx = Depends(current), db: Session = Depends(get_db)):
-    """Nuova password per un accesso dei nonni (dimenticata o telefono cambiato)."""
+def reset_password(user_id: str, ctx: Ctx = Depends(current), db: Session = Depends(get_db)):
+    """Nuova password per un altro accesso della famiglia (dimenticata o telefono cambiato)."""
     _admin(ctx)
-    membership = db.get(HouseholdUser, (ctx.household_id, user_id))
-    if membership is None or membership.role != "nonno":
-        raise ApiError(404, "not_found", "Accesso non trovato.")
+    membership = _other_member(db, ctx, user_id)
     password = _password()
     user = db.get(User, user_id)
     user.password_hash = hash_password(password)
     # Telefono perso o cambiato: gli accessi già aperti con la vecchia password si chiudono.
-    for session in db.scalars(select(UserSession).where(UserSession.user_id == user_id)).all():
-        db.delete(session)
+    _close_sessions(db, user_id)
     db.commit()
     return {"id": user.id, "login": user.login, "password": password}
 

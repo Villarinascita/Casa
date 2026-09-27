@@ -48,10 +48,16 @@ export function render() {
       <p>Carica un PDF o un Word con le cose che devono fare i nonni: Hermes lo legge e te lo fa confermare in «Da controllare». Puoi anche mandarlo al bot Telegram.</p>
       <label class="file-button">Carica il programma (PDF o Word)<input type="file" id="plan-file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"></label>
       <p id="plan-status" role="status"></p>
-      <h3>Accessi dei nonni</h3>
+      <p>Gli accessi dei nonni si creano qui sotto, in «Accessi della famiglia», scegliendo «Nonno».</p>
+    </section>
+
+    <section class="module">
+      ${sectionHead('Accessi della famiglia')}
+      <p>Chi può entrare in Insieme. «Adulto» vede e usa tutta l'app; «Nonno» vede solo la pagina dei nonni. La password si mostra una volta sola: scrivila e consegnala.</p>
       <div id="grandparent-users" aria-live="polite">Caricamento…</div>
       <form id="grandparent-create" class="quick-add" autocomplete="off">
-        <label class="grow"><span>Nuovo accesso (nome utente)</span><input name="login" required minlength="3" maxlength="40" placeholder="Es. nonna.anna"></label>
+        <label class="grow"><span>Nome utente</span><input name="login" required minlength="3" maxlength="40" placeholder="Es. mariachiara"></label>
+        <label><span>Tipo di accesso</span><select name="role"><option value="adult">Adulto (tutta l'app)</option><option value="nonno">Nonno (solo la sua pagina)</option></select></label>
         <button type="submit" class="primary">Crea accesso</button>
       </form>
       <div id="grandparent-password" class="password-reveal" aria-live="polite" hidden></div>
@@ -415,12 +421,33 @@ function showPassword(root, { login, password }) {
     <small>Scrivila adesso e dalla al nonno: poi non si vede più. Se si perde, crea una nuova password.</small>`);
 }
 
+const ROLE_LABELS = { admin: 'Amministratore', adult: 'Adulto', nonno: 'Nonno' };
+let deleting = null;
+
 async function loadGrandparents(root) {
   const box = $('#grandparent-users', root);
-  const users = (await api('GET', '/household/users')).filter((u) => u.role === 'nonno');
-  box.innerHTML = users.length ? String(html`<ul class="grandparent-list">${users.map((u) => html`<li>
-    <span>${u.login}</span><button type="button" data-reset="${u.id}">Nuova password</button></li>`)}</ul>`)
-    : '<p>Nessun accesso per i nonni.</p>';
+  const users = await api('GET', '/household/users');
+  const mine = state.me?.user_id;
+  box.innerHTML = String(html`<ul class="grandparent-list">${users.map((u) => html`<li>
+    <span><strong>${u.login}</strong> · ${ROLE_LABELS[u.role] || u.role}${u.id === mine ? ' (tu)' : ''}</span>
+    ${u.id === mine ? '' : deleting === u.id
+      ? html`<span class="bulk-confirm">Eliminare ${u.login}? <button type="button" class="danger" data-delete="${u.id}" data-confirm="yes">Sì, elimina</button><button type="button" data-delete="${u.id}" data-confirm="no">No</button></span>`
+      : html`<span class="button-row"><button type="button" data-reset="${u.id}">Nuova password</button><button type="button" class="danger" data-delete="${u.id}">Elimina</button></span>`}
+  </li>`)}</ul>`);
+  $$('[data-delete]', box).forEach((button) => button.addEventListener('click', async () => {
+    const id = button.dataset.delete;
+    if (!button.dataset.confirm || button.dataset.confirm === 'no') {
+      deleting = button.dataset.confirm === 'no' ? null : id;
+      await loadGrandparents(root);
+      return;
+    }
+    try {
+      await api('DELETE', `/household/users/${id}`);
+      deleting = null;
+      toast('Accesso eliminato.');
+      await loadGrandparents(root);
+    } catch (err) { toast(err.message); }
+  }));
   $$('[data-reset]', box).forEach((button) => button.addEventListener('click', async () => {
     try {
       showPassword(root, await api('POST', `/household/users/${button.dataset.reset}/password`));
@@ -459,7 +486,7 @@ function mountGrandparents(root) {
   $('#grandparent-create', root).addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
-      const created = await api('POST', '/household/users', { body: { login: e.target.elements.login.value } });
+      const created = await api('POST', '/household/users', { body: { login: e.target.elements.login.value, role: e.target.elements.role.value } });
       e.target.reset();
       showPassword(root, created);
       await loadGrandparents(root);
