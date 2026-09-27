@@ -71,9 +71,9 @@ def test_voci_pulite():
         date(2026, 9, 27))
     assert items == [
         {"who": "Nonna Anna", "title": "Asilo", "weekday": 2, "date": None, "start": "16:30", "end": None,
-         "place": None, "until": "2027-06-30"},
+         "place": None, "notes": None, "from": None, "until": "2027-06-30"},
         {"who": "Nonno Piero", "title": "Visita", "weekday": None, "date": "2026-10-05", "start": None, "end": None,
-         "place": None, "until": None}]
+         "place": None, "notes": None, "from": None, "until": None}]
     assert school_year_end(date(2027, 3, 1)) == date(2027, 6, 30)
 
 
@@ -84,7 +84,7 @@ def _plan(db, seed, source="app"):
     return plan, user
 
 
-def _read(text, members, today):
+def _read(text, members, today, context=""):
     return {"items": [{"who": "Nonna Anna", "title": "Prendere Matilde all'asilo", "weekday": 2, "start": "16:30",
                        "place": "Asilo", "until": "2026-10-20"},
                       {"who": "Mamma Rossi", "title": "Visita pediatra", "date": "2026-10-01", "start": "10:00"}],
@@ -190,3 +190,28 @@ def test_telegram_senza_collegamento(db_factory, seed):
         reply = receive_document(db, {"update_id": 9, "message": {"from": {"id": 999}, "chat": {"id": 999, "type": "private"}}},
                                  "p.docx", _docx(["x"]))
         assert "Collega Telegram" in reply
+
+
+def test_vale_dalla_data_indicata_con_indicazioni_e_calendario(db_factory, seed):
+    with db_factory() as db:
+        user = db.scalar(select(User).where(User.login == "luca"))
+        db.add(Event(household_id=seed["Rossi"], title="GINNASTICA ARTISTICA", source="google",
+                     start_at=datetime(2026, 10, 1, 14, 30, tzinfo=timezone.utc)))
+        db.commit()
+        plan = create_plan(db, seed["Rossi"], user.id, "app", "schema.docx", _docx(["Lunedì ginnastica con Mirco"]))
+        seen = {}
+
+        def read(text, members, today, context):
+            seen["context"] = context
+            return {"items": [{"who": "Mirco", "title": "Portare Matilde a ginnastica", "weekday": 1, "start": "16:30",
+                               "notes": "Dopo: doccia e pigiamino, cena alle 19:00", "from": "2026-10-05",
+                               "until": "2026-10-19"}]}
+
+        process_plans(db, read, NOW)
+        assert "gio 01/10" in seen["context"] and "GINNASTICA ARTISTICA" in seen["context"]
+        assert plan.items[0]["from"] == "2026-10-05"
+        result = apply_plan(db, plan, user.id, NOW)
+        events = sorted(db.scalars(select(Event).where(Event.source == "nonni")).all(), key=lambda e: e.start_at)
+        assert result["created"] == 3 and [e.start_at.date().isoformat() for e in events] == [
+            "2026-10-05", "2026-10-12", "2026-10-19"]  # non il 28/09: vale dal 5/10
+        assert events[0].notes == "Dopo: doccia e pigiamino, cena alle 19:00"

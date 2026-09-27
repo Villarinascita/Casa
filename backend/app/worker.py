@@ -199,8 +199,8 @@ def main() -> None:
                     return hermes.interpret(text, ctx, timezone_name)
                 run_once(db, messenger, interpret, datetime.now(timezone.utc))
                 try:
-                    process_plans(db, lambda text, members, today: hermes_email.read_grandparent_plan(
-                        text, members, today, settings.hermes_email_model), datetime.now(timezone.utc),
+                    process_plans(db, lambda text, members, today, context: hermes_email.read_grandparent_plan(
+                        text, members, today, settings.hermes_email_model, context), datetime.now(timezone.utc),
                         notify=lambda plan, summary: notify_plan(db, messenger, plan, summary))
                 except Exception:
                     db.rollback()

@@ -122,11 +122,26 @@ def normalize_items(raw: list, today: date) -> list[dict]:
                       "weekday": None if when else weekday, "date": when,
                       "start": _clock(entry.get("start")), "end": _clock(entry.get("end")),
                       "place": (str(entry.get("place") or "").strip()[:300] or None),
+                      "notes": (str(entry.get("notes") or "").strip()[:500] or None),
+                      "from": _day(entry.get("from")) if not when else None,
                       "until": (_day(entry.get("until")) or school_year_end(today).isoformat()) if not when else None})
     return items
 
 
-def process_plans(db: Session, read: Callable[[str, list[str], date], dict], now: datetime,
+IT_DAYS = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"]
+
+
+def calendar_context(db: Session, household: Household, tz: ZoneInfo, now: datetime, days: int = 21) -> str:
+    """Impegni della famiglia nelle prossime settimane (esclusi quelli dei nonni), per gli orari mancanti."""
+    start = now.astimezone(tz)
+    rows = db.scalars(select(Event).where(
+        Event.household_id == household.id, Event.deleted_at.is_(None), Event.source != SOURCE,
+        Event.start_at.between(start, start + timedelta(days=days))).order_by(Event.start_at).limit(80)).all()
+    return "; ".join(f"{IT_DAYS[e.start_at.astimezone(tz).weekday()]} {e.start_at.astimezone(tz):%d/%m %H:%M} {e.title[:60]}"
+                     for e in rows)
+
+
+def process_plans(db: Session, read: Callable[[str, list[str], date, str], dict], now: datetime,
                   notify: Callable[[GrandparentPlan, str], None] | None = None) -> int:
     """Fa leggere a Hermes i programmi appena caricati; un errore lascia il programma «failed» con il motivo."""
     done = 0
@@ -136,7 +151,7 @@ def process_plans(db: Session, read: Callable[[str, list[str], date], dict], now
         members = [m.display_name for m in db.scalars(select(Member).where(
             Member.household_id == household.id, Member.archived.is_(False), Member.deleted_at.is_(None)))]
         try:
-            result = read(plan.text, members, now.astimezone(tz).date())
+            result = read(plan.text, members, now.astimezone(tz).date(), calendar_context(db, household, tz, now))
             plan.items = normalize_items(result.get("items"), now.astimezone(tz).date())
             plan.notes = (str(result.get("notes") or "").strip()[:1000] or None)
             plan.status = "pending" if plan.items else "failed"
@@ -174,7 +189,9 @@ def describe(item: dict) -> str:
     hours = f" {item['start']}" + (f"–{item['end']}" if item.get("end") else "") if item.get("start") else ""
     until = f" (fino al {date.fromisoformat(item['until']).strftime('%d/%m/%Y')})" if item.get("until") else ""
     place = f" · {item['place']}" if item.get("place") else ""
-    return f"{item['who']} · {when}{hours} · {item['title']}{place}{until}"
+    since = f" dal {date.fromisoformat(item['from']).strftime('%d/%m')}" if item.get("from") else ""
+    notes = f" — {item['notes']}" if item.get("notes") else ""
+    return f"{item['who']} · {when}{hours} · {item['title']}{place}{since}{until}{notes}"
 
 
 def summary(plan: GrandparentPlan) -> str:
@@ -191,7 +208,8 @@ def _occurrences(item: dict, today: date) -> list[date]:
         day = date.fromisoformat(item["date"])
         return [day] if day >= today else []
     until = date.fromisoformat(item["until"])
-    first = today + timedelta(days=(item["weekday"] - 1 - today.weekday()) % 7)
+    begin = max(today, date.fromisoformat(item["from"])) if item.get("from") else today
+    first = begin + timedelta(days=(item["weekday"] - 1 - begin.weekday()) % 7)
     return [first + timedelta(weeks=w) for w in range(0, max(0, (until - first).days) // 7 + 1)]
 
 
@@ -230,7 +248,7 @@ def apply_plan(db: Session, plan: GrandparentPlan, user_id: str, now: datetime) 
             if created >= MAX_EVENTS:
                 break
             event = Event(household_id=household.id, created_by=user_id, title=item["title"],
-                          location=item.get("place"), member_id=member.id, source=SOURCE)
+                          location=item.get("place"), notes=item.get("notes"), member_id=member.id, source=SOURCE)
             if item.get("start"):
                 start = datetime.combine(day, time.fromisoformat(item["start"]), tzinfo=tz)
                 event.start_at = start
