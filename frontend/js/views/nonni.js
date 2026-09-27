@@ -15,7 +15,7 @@ const longDate = (iso) => parseDate(iso).toLocaleDateString('it-IT', { day: 'num
 
 function item(it) {
   return html`<li class="nonni-item">
-    <span class="nonni-time">${it.time || 'Tutto il giorno'}</span>
+    <span class="nonni-time ${it.time ? '' : 'later'}">${it.time || 'Poi'}</span>
     <span class="nonni-what">${it.title}</span>
     ${it.place ? html`<span class="nonni-detail">Dove: ${it.place}</span>` : ''}
     ${it.notes ? html`<span class="nonni-detail">${it.notes}</span>` : ''}

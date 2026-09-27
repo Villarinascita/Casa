@@ -64,7 +64,8 @@ def week(start: date | None = Query(None, description="Un giorno qualsiasi della
         "start": monday.isoformat(), "today": today.isoformat(),
         "who": [members[m] for m in chosen],
         "days": [{"date": d.isoformat(), "name": DAY_NAMES[d.weekday()],
-                  "items": sorted(items[d], key=lambda i: (i["time"] is not None, i["time"] or ""))} for d in days],
+                  # Prima gli orari, poi le indicazioni senza orario (es. «dopo la ginnastica: doccia e cena»).
+                  "items": sorted(items[d], key=lambda i: (i["time"] is None, i["time"] or ""))} for d in days],
     }
 
 
