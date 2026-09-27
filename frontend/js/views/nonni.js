@@ -3,6 +3,7 @@
 import { $, $$, html } from '../dom.js';
 import { api } from '../api.js';
 import { addDays, parseDate, today } from '../dates.js';
+import { openEditor } from '../editor.js';
 import { logout, state } from '../store.js';
 
 const REFRESH_MS = 60_000;
@@ -20,6 +21,7 @@ function item(it) {
     ${it.place ? html`<span class="nonni-detail">Dove: ${it.place}</span>` : ''}
     ${it.notes ? html`<span class="nonni-detail">${it.notes}</span>` : ''}
     ${week.who.length > 1 && it.who ? html`<span class="nonni-who">${it.who}</span>` : ''}
+    ${state.me?.role !== 'nonno' && it.id ? html`<button type="button" class="nonni-edit" data-edit="${it.id}" data-kind="${it.kind}">Modifica</button>` : ''}
   </li>`;
 }
 
@@ -76,7 +78,8 @@ export function mount(root) {
     bind(root, rerender);
   };
   bind(root, rerender);
-  if (!week) load(rerender);
+  // L'anteprima si ricarica a ogni apertura (anche dopo una modifica); i nonni ogni minuto.
+  load(rerender);
   clearInterval(timer);
   timer = setInterval(() => { if (document.visibilityState === 'visible') load(rerender); }, REFRESH_MS);
 }
@@ -93,4 +96,11 @@ function bind(root, rerender) {
     window.scrollTo(0, 0);
   }));
   $('.nonni-exit', root)?.addEventListener('click', () => { clearInterval(timer); logout(); });
+  $$('[data-edit]', root).forEach((button) => button.addEventListener('click', async () => {
+    const { edit, kind } = button.dataset;
+    try {
+      const entity = await api('GET', `/${kind === 'event' ? 'events' : 'tasks'}/${edit}`);
+      openEditor({ type: kind, entity });
+    } catch (err) { button.textContent = err.message; }
+  }));
 }

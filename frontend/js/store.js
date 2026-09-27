@@ -47,7 +47,8 @@ export const find = (kind, id) => state[KINDS[kind].key].find((item) => item.id 
 function replace(kind, entity) {
   const list = state[KINDS[kind].key];
   const index = list.findIndex((item) => item.id === entity.id);
-  if (entity.deleted_at) {
+  // Gli impegni del programma dei nonni non fanno parte del calendario di famiglia.
+  if (entity.deleted_at || entity.source === 'nonni') {
     if (index >= 0) list.splice(index, 1);
   } else if (index >= 0) {
     list[index] = entity;

@@ -53,13 +53,13 @@ def week(start: date | None = Query(None, description="Un giorno qualsiasi della
                 span = [local.date()] if local.date() in items else []
                 when = local.strftime("%H:%M")
             for d in span:
-                items[d].append({"time": when, "title": event.title, "place": event.location,
-                                 "notes": event.notes, "who": members.get(event.member_id)})
+                items[d].append({"id": event.id, "kind": "event", "time": when, "title": event.title,
+                                 "place": event.location, "notes": event.notes, "who": members.get(event.member_id)})
         for task in db.scalars(select(Task).where(
                 Task.household_id == household.id, Task.deleted_at.is_(None), Task.status == "open",
                 Task.member_id.in_(chosen), Task.due_date.between(monday, days[-1]))).all():
-            items[task.due_date].append({"time": None, "title": task.title, "place": None, "notes": task.notes,
-                                         "who": members.get(task.member_id)})
+            items[task.due_date].append({"id": task.id, "kind": "task", "time": None, "title": task.title,
+                                         "place": None, "notes": task.notes, "who": members.get(task.member_id)})
     return {
         "start": monday.isoformat(), "today": today.isoformat(),
         "who": [members[m] for m in chosen],
