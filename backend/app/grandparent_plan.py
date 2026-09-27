@@ -159,6 +159,7 @@ def process_plans(db: Session, read: Callable[[str, list[str], date, str], dict]
                 plan.notes = plan.notes or "Non ho trovato impegni con giorno e nonno: controlla il file."
         except HermesUnavailable as exc:
             if not isinstance(exc, HermesInvalidResponse):
+                logger.warning("Hermes non raggiungibile per il programma dei nonni: si riprova (%s)", exc.__cause__ or exc)
                 db.rollback()
                 continue  # Hermes momentaneamente non raggiungibile: si riprova al prossimo giro
             logger.exception("Programma dei nonni non leggibile")

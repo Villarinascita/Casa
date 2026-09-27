@@ -177,6 +177,8 @@ def run_once(db: Session, messenger, interpret, now: datetime) -> None:
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
+    # httpx scrive nei log l'indirizzo completo delle richieste, che per Telegram contiene il token del bot.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     if not settings.telegram_bot_token:
         raise RuntimeError("INSIEME_TELEGRAM_BOT_TOKEN mancante")
     messenger = TelegramApi(settings.telegram_bot_token, settings.stt_url,
