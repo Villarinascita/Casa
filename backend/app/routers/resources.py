@@ -1,17 +1,18 @@
 from datetime import date, datetime, time, timezone
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Header, Query, Request
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from ..bill_taxonomy import learn
-from ..crud import Resource, audit, build_router, commit
+from ..crud import Resource, audit, build_router, commit, idempotent_create
+from ..event_recurrence import create_series
 from ..db import get_db
 from ..errors import ApiError
 from ..models import Bill, Event, Household, Member, ShoppingItem, Task, utcnow
 from ..schemas import (BillIn, BillOut, BillPatch, EventIn, EventOut, EventPatch, MemberIn, MemberOut, MemberPatch,
-                       ShoppingIn, ShoppingOut, ShoppingPatch, TaskIn, TaskOut, TaskPatch)
+                       ShoppingIn, ShoppingOut, ShoppingPatch, TaskIn, TaskOut, TaskPatch, EventSeriesIn)
 from ..security import Ctx, current
 
 
@@ -76,6 +77,13 @@ bills = build_router("/bills", Resource(
     order_by=(Bill.due_date,), references_member=False))
 
 events = build_router("/events", Resource(Event, EventIn, EventPatch, EventOut), custom_list=True)
+
+
+@events.post("/recurring", response_model=EventOut, status_code=201)
+def recurring_events(data: EventSeriesIn, request: Request, ctx: Ctx = Depends(current),
+                     db: Session = Depends(get_db), idempotency_key: str | None = Header(None)):
+    return idempotent_create(db, ctx, request, idempotency_key,
+                             lambda: create_series(db, ctx, data), EventOut)
 
 
 @events.get("", response_model=list[EventOut])

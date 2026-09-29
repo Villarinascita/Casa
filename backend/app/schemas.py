@@ -144,6 +144,7 @@ class EventIn(Schema):
     location: OptText(300) = None
     notes: OptText(2000) = None
     member_id: str | None = None
+    reminder_minutes: int | None = Field(default=None, ge=0, le=10080)
 
     _blank = field_validator("location", "notes", "member_id", mode="before")(_blank_to_none)
 
@@ -170,6 +171,11 @@ class EventIn(Schema):
         return self
 
 
+class EventSeriesIn(EventIn):
+    repeat: Literal["daily", "weekly", "monthly"]
+    repeat_until: date
+
+
 class EventPatch(Schema):
     title: Text(180) | None = None
     all_day: bool | None = None
@@ -180,6 +186,7 @@ class EventPatch(Schema):
     location: OptText(300) = None
     notes: OptText(2000) = None
     member_id: str | None = None
+    reminder_minutes: int | None = Field(default=None, ge=0, le=10080)
 
 
 class EventOut(EntityOut):
@@ -193,6 +200,8 @@ class EventOut(EntityOut):
     notes: str | None
     member_id: str | None
     source: str
+    series_id: str | None
+    reminder_minutes: int | None
 
 
 # --- Attività --------------------------------------------------------------------------------

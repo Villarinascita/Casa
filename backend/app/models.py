@@ -137,6 +137,8 @@ class Event(HouseholdEntity, Base):
     member_id: Mapped[str | None] = mapped_column(ForeignKey("members.id"))
     source: Mapped[str] = mapped_column(String(40), default="manual")
     source_sender: Mapped[str | None] = mapped_column(String(320))
+    series_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    reminder_minutes: Mapped[int | None] = mapped_column(Integer)
 
     __table_args__ = (
         CheckConstraint(
@@ -213,6 +215,20 @@ class ReminderDelivery(Base):
     sent_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
     __table_args__ = (UniqueConstraint("task_id", "scheduled_at", name="uq_reminder_task_occurrence"),)
+
+
+class EventReminderDelivery(Base):
+    __tablename__ = "event_reminder_deliveries"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    event_id: Mapped[str] = mapped_column(ForeignKey("events.id"), index=True)
+    scheduled_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    status: Mapped[str] = mapped_column(String(12), default="pending", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(String(300))
+    sent_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+    __table_args__ = (UniqueConstraint("event_id", "scheduled_at", name="uq_event_reminder_occurrence"),)
 
 
 class ChannelLink(Base):

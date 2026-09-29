@@ -10,7 +10,6 @@ const REFRESH_MS = 60_000;
 let week = null;
 let start = null;
 let error = null;
-let timer = null;
 
 const longDate = (iso) => parseDate(iso).toLocaleDateString('it-IT', { day: 'numeric', month: 'long' });
 
@@ -61,30 +60,42 @@ export function render() {
   </div>`;
 }
 
-async function load(rerender) {
-  try {
-    week = await api('GET', `/nonni/week${start ? `?start=${start}` : ''}`);
-    error = null;
-  } catch (err) {
-    error = err.message;
-  }
-  rerender();
-}
-
 export function mount(root) {
-  const rerender = () => {
-    if (!root.isConnected) return;
-    root.innerHTML = String(render());
-    bind(root, rerender);
+  let active = true;
+  let request = 0;
+  let timer = null;
+  const isActive = () => active && root.isConnected && state.me
+    && (state.me.role === 'nonno' || location.hash === '#nonni');
+  const cleanup = () => { active = false; clearInterval(timer); };
+  const load = async () => {
+    const currentRequest = ++request;
+    try {
+      const result = await api('GET', `/nonni/week${start ? `?start=${start}` : ''}`);
+      if (!isActive() || currentRequest !== request) return;
+      week = result;
+      error = null;
+    } catch (err) {
+      if (!isActive() || currentRequest !== request) return;
+      error = err.message;
+    }
+    rerender();
   };
-  bind(root, rerender);
+  const rerender = () => {
+    if (!isActive()) return;
+    root.innerHTML = String(render());
+    bind(root, rerender, load, cleanup);
+  };
+  bind(root, rerender, load, cleanup);
   // L'anteprima si ricarica a ogni apertura (anche dopo una modifica); i nonni ogni minuto.
-  load(rerender);
-  clearInterval(timer);
-  timer = setInterval(() => { if (document.visibilityState === 'visible') load(rerender); }, REFRESH_MS);
+  load();
+  timer = setInterval(() => {
+    if (!isActive()) return cleanup();
+    if (document.visibilityState === 'visible') load();
+  }, REFRESH_MS);
+  return cleanup;
 }
 
-function bind(root, rerender) {
+function bind(root, rerender, load, cleanup) {
   $$('[data-week]', root).forEach((button) => button.addEventListener('click', () => {
     const action = button.dataset.week;
     if (action === 'next') start = addDays((week?.start) || today(), 7);
@@ -92,10 +103,10 @@ function bind(root, rerender) {
     else start = null;
     week = null;
     rerender();
-    load(rerender);
+    load();
     window.scrollTo(0, 0);
   }));
-  $('.nonni-exit', root)?.addEventListener('click', () => { clearInterval(timer); logout(); });
+  $('.nonni-exit', root)?.addEventListener('click', () => { cleanup(); logout(); });
   $$('[data-edit]', root).forEach((button) => button.addEventListener('click', async () => {
     const { edit, kind } = button.dataset;
     try {

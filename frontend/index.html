@@ -84,7 +84,23 @@
       <div data-for="event task">
         <label><span>Note</span><textarea name="notes" rows="3" maxlength="2000"></textarea></label>
       </div>
-      <p class="hint" data-for="event">Ricorrenze e promemoria automatici arriveranno nelle prossime versioni.</p>
+      <div data-for="event">
+        <div id="event-recurrence" class="fields">
+          <label><span>Ripeti appuntamento</span><select name="event_repeat">
+            <option value="">Non ripetere</option><option value="daily">Ogni giorno</option>
+            <option value="weekly">Ogni settimana</option><option value="monthly">Ogni mese</option>
+          </select></label>
+          <label id="event-repeat-until" hidden><span>Fino al (compreso)</span><input name="repeat_until" type="date"></label>
+        </div>
+        <p id="event-series-hint" class="hint" hidden></p>
+        <label><span>Promemoria Telegram</span><select name="reminder_minutes">
+          <option value="">Nessun promemoria</option><option value="0">All’inizio</option>
+          <option value="15">15 minuti prima</option><option value="30">30 minuti prima</option>
+          <option value="60">1 ora prima</option><option value="120">2 ore prima</option>
+          <option value="1440">1 giorno prima</option><option value="10080">1 settimana prima</option>
+        </select></label>
+        <p class="hint">Il promemoria arriva al responsabile, se ha un account associato, altrimenti a chi crea l’appuntamento. Il destinatario deve collegare Telegram dalle Impostazioni. Per «Tutto il giorno», l’orario di riferimento è le 09:00 nel fuso della famiglia.</p>
+      </div>
       <p id="form-error" class="form-error" role="alert"></p>
       <div class="dialog-actions">
         <button type="button" id="editor-delete" class="danger" hidden>Elimina</button>

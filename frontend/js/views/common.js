@@ -23,7 +23,8 @@ export function eventRow(event, { showDate = false } = {}) {
   const dateLabel = showDate ? (first === last ? formatDay(first) : `${formatDay(first)} → ${formatDay(last)}`) : null;
   return html`<div class="item">
     <span class="time-pill ${event.all_day ? 'all-day' : ''}">${eventTimeLabel(event)}</span>
-    ${openButton('event', event.id, event.title, [dateLabel, memberName(event.member_id) || 'Nessuno assegnato', event.location])}
+    ${openButton('event', event.id, event.title, [dateLabel, memberName(event.member_id) || 'Nessuno assegnato', event.location,
+      event.series_id ? 'Appuntamento ripetuto' : null, event.reminder_minutes != null ? 'Promemoria Telegram' : null])}
   </div>`;
 }
 

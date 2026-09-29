@@ -133,12 +133,15 @@ export async function refreshReview() {
  * (l'editor la tiene finché resta aperto): se la prima richiesta era arrivata, il server non duplica.
  */
 export async function create(kind, data, idempotencyKey = uid()) {
-  const send = () => api('POST', KINDS[kind].path, { body: data, idempotencyKey });
+  const recurring = kind === 'event' && Boolean(data.repeat);
+  const path = recurring ? '/events/recurring' : KINDS[kind].path;
+  const send = () => api('POST', path, { body: data, idempotencyKey });
   const entity = await guard(send().catch((error) => {
     if (error instanceof ApiError && error.status === 0) return send();
     throw error;
   }));
   replace(kind, entity);
+  if (recurring) await refresh();
   emit('change');
   return entity;
 }

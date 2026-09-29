@@ -33,6 +33,7 @@ const SYNC_INTERVAL_MS = 30_000;
 
 let startupError = null;
 let pendingRender = false;
+let unmountView = null;
 
 const currentRoute = () => (ROUTES[location.hash.slice(1)] ? location.hash.slice(1) : 'oggi');
 
@@ -87,6 +88,8 @@ export function render({ background = false } = {}) {
     return;
   }
   pendingRender = false;
+  unmountView?.();
+  unmountView = null;
   renderChrome();
   const screen = $('#screen');
   if (startupError) {
@@ -97,7 +100,7 @@ export function render({ background = false } = {}) {
   const view = !state.me ? loginView : state.me.role === 'nonno' ? nonni : ROUTES[currentRoute()].view;
   const key = focusKey();
   screen.innerHTML = String(view.render());
-  view.mount?.(screen);
+  unmountView = view.mount?.(screen);
   if (key) $(key, screen)?.focus();
 }
 

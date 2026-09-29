@@ -22,6 +22,7 @@ from .google import GoogleService
 from .hermes_client import HermesClient
 from .models import ChannelLink, Event, GoogleCalendar, GoogleConnection, Household, WorkerCursor
 from .reminders import dispatch_pending, enqueue_due
+from . import event_reminders
 from .grandparent_plan import process_plans
 from .telegram import process_update, receive_document
 
@@ -139,6 +140,8 @@ def notify_plan(db: Session, messenger, plan, summary: str) -> None:
 def run_once(db: Session, messenger, interpret, now: datetime) -> None:
     enqueue_due(db, now)
     dispatch_pending(db, messenger.send, now)
+    event_reminders.enqueue_due(db, now)
+    event_reminders.dispatch_pending(db, messenger.send, now)
     cursor = db.get(WorkerCursor, "telegram")
     if cursor is None:
         cursor = WorkerCursor(name="telegram", value=0)

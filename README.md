@@ -7,7 +7,7 @@ Specifica completa, decisioni e piano: [docs/SPECIFICA_COMPLETA.md](docs/SPECIFI
 
 - Accesso con account personali (niente registrazione pubblica: gli utenti si creano da riga di comando).
 - Familiari con identificativo stabile: rinominarli non rompe gli impegni; si archiviano invece di cancellarli.
-- Appuntamenti con ora di inizio/fine o per tutto il giorno, persona responsabile e luogo.
+- Appuntamenti con ora di inizio/fine o per tutto il giorno, persona responsabile e luogo. Ripetizione giornaliera, settimanale o mensile fino a una data scelta, con promemoria Telegram.
 - Attività con scadenza e responsabile; scadute evidenziate. Lista della spesa condivisa con inserimento rapido.
 - Calendario mensile con giorni selezionabili; vista «Famiglia» con chi fa cosa e cosa è senza responsabile.
 - Modifica di ogni voce, eliminazione con «Annulla», conflitti tra due dispositivi segnalati (mai sovrascritti in silenzio).
@@ -16,7 +16,26 @@ Specifica completa, decisioni e piano: [docs/SPECIFICA_COMPLETA.md](docs/SPECIFI
 
 Questa versione aggiunge il collegamento Telegram per ogni utente, messaggi scritti e vocali (con trascrizione configurata), interpretazione tramite Hermes dedicato, creazione strutturata di appuntamenti/attività/spesa, promemoria Telegram e ripetizione delle attività. Gmail in sola lettura produce proposte da approvare; Calendar sincronizza i calendari selezionati e mostra i conflitti da risolvere. Sul NAS è attiva solo l'API/PWA; le integrazioni esterne non sono ancora collegate ad account reali.
 
-Restano fuori da questo rilascio: documenti, auto/bollette, WhatsApp, ricorrenze degli appuntamenti e sincronizzazione offline in scrittura.
+Restano fuori da questo rilascio: documenti, auto/bollette, WhatsApp e sincronizzazione offline in scrittura.
+
+### Appuntamenti ripetuti e promemoria
+
+Nel nuovo appuntamento scegli «Ripeti appuntamento» e «Fino al (compreso)».
+La serie genera al massimo 366 appuntamenti indipendenti: modifica, eliminazione e annullamento
+riguardano la singola occorrenza. Gli orari delle ripetizioni seguono il fuso della famiglia,
+anche al cambio dell'ora; nei mesi più corti si usa l'ultimo giorno disponibile, tornando
+al giorno originale nel mese successivo. In Google Calendar vengono sincronizzati come singoli eventi.
+
+«Promemoria Telegram» vale anche per un appuntamento non ripetuto. Il destinatario è il responsabile
+se ha un utente associato, altrimenti l'autore. Serve il collegamento Telegram del destinatario
+e il worker in esecuzione. Gli eventi per tutto il giorno usano le 09:00 come riferimento;
+l'anticipo è espresso in minuti (1 giorno = 24 ore). Gli invii falliti vengono ritentati;
+gli avvisi disattivati, eliminati o non più validi dopo uno spostamento vengono annullati.
+Gli avvisi scadono alla fine dell'appuntamento, oppure un'ora dopo l'inizio se non ha una fine,
+e a fine giornata per gli eventi senza orario. Non vengono recuperati dopo tale scadenza.
+
+Per aggiornare un'installazione esistente, eseguire `alembic upgrade head` dalla cartella `backend`
+prima di avviare la nuova API e il worker (migrazione `20260929_01`).
 
 ## Struttura
 
@@ -50,6 +69,8 @@ Per le integrazioni avvia anche `uv run python -m app.worker` in un secondo proc
 Sul NAS usa [compose.yaml](compose.yaml) e la guida [docs/DEPLOY_NAS.md](docs/DEPLOY_NAS.md). La chiave di cifratura e le credenziali devono essere conservate anche nel backup separato.
 
 ## Test
+
+I test di regressione del frontend si eseguono dalla radice con `node --test frontend/tests/*.test.mjs`.
 
 ```powershell
 cd backend

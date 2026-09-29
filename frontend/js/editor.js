@@ -38,6 +38,15 @@ function syncFields() {
   }[type];
   $('#title-label').textContent = { shopping: 'Prodotto', bill: 'Titolo' }[type] || 'Cosa?';
   $('#editor-delete').hidden = !editing;
+  $('#event-recurrence').hidden = Boolean(editing);
+  const repeats = !editing && Boolean(f.elements.event_repeat.value);
+  $('#event-repeat-until').hidden = !repeats;
+  f.elements.repeat_until.min = f.elements.date.value;
+  const seriesHint = $('#event-series-hint');
+  seriesHint.hidden = !(editing?.series_id || repeats);
+  seriesHint.textContent = editing?.series_id
+    ? 'Modifiche ed eliminazione riguardano solo questo appuntamento, non tutta la serie.'
+    : 'Ogni occorrenza sarà modificabile singolarmente. Massimo 366 appuntamenti; nei mesi più corti si usa l’ultimo giorno disponibile.';
 }
 
 function fillMembers(selectedId) {
@@ -80,6 +89,16 @@ export function openEditor({ type = 'event', date, entity = null } = {}) {
   $$('[name=type]', f).forEach((radio) => { radio.disabled = Boolean(entity); });
   fillMembers(entity?.member_id);
   fillCategories(entity?.category, entity?.subcategory);
+  // Keep custom reminder values received through the API when editing.
+  const reminders = f.elements.reminder_minutes;
+  reminders.querySelector('[data-custom]')?.remove();
+  if (type === 'event' && entity?.reminder_minutes != null) {
+    const value = String(entity.reminder_minutes);
+    if (![...reminders.options].some((option) => option.value === value)) {
+      reminders.insertAdjacentHTML('beforeend', String(html`<option data-custom value="${value}">${value} minuti prima</option>`));
+    }
+    reminders.value = value;
+  }
 
   if (entity && type === 'event') {
     f.elements.title.value = entity.title;
@@ -142,6 +161,14 @@ function payload() {
   const date = f.date.value;
   if (!date) return { error: 'Indica la data dell’appuntamento.' };
   const event = { ...common, location: f.location.value.trim() || null };
+  event.reminder_minutes = f.reminder_minutes.value === '' ? null : Number(f.reminder_minutes.value);
+  if (!editing && f.event_repeat.value) {
+    if (!f.repeat_until.value || f.repeat_until.value < date) {
+      return { error: 'Scegli una data finale uguale o successiva al primo appuntamento.' };
+    }
+    event.repeat = f.event_repeat.value;
+    event.repeat_until = f.repeat_until.value;
+  }
   if (f.all_day.checked) return { data: { ...event, all_day: true, start_date: date } };
   if (!f.start.value) return { error: 'Indica l’ora di inizio, oppure scegli «Tutto il giorno».' };
   if (f.end.value && f.end.value < f.start.value) return { error: 'L’ora di fine precede quella di inizio.' };
@@ -175,7 +202,8 @@ async function submit(e) {
     if (editing) await update(type, editing, data);
     else await create(type, data, idempotencyKey);
     closeEditor();
-    toast(wasEditing ? 'Modifiche salvate.' : 'Salvato. Lo vedono tutti i familiari collegati.');
+    toast(wasEditing ? 'Modifiche salvate.' : data.repeat
+      ? 'Appuntamenti ripetuti salvati nel calendario.' : 'Salvato. Lo vedono tutti i familiari collegati.');
   } catch (err) {
     errorBox.textContent = err.message;
   } finally {
@@ -204,7 +232,7 @@ export function setupEditor() {
   f.addEventListener('submit', submit);
   $('#editor-delete').addEventListener('click', deleteEditing);
   f.addEventListener('change', (e) => {
-    if (e.target.name === 'type' || e.target.name === 'all_day') syncFields();
+    if (['type', 'all_day', 'event_repeat', 'date'].includes(e.target.name)) syncFields();
     if (e.target.name === 'category') fillSubcategories();
   });
   $('[data-close]', f).addEventListener('click', closeEditor);
